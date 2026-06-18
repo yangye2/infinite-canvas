@@ -1,7 +1,7 @@
 "use client";
 
 import { FolderPlus, Search } from "lucide-react";
-import { type UIEvent, useEffect, useState } from "react";
+import { type UIEvent, useState } from "react";
 import { App, Button, Empty, Input, Spin, Tag } from "antd";
 
 import { PromptCard } from "@/components/prompts/prompt-card";
@@ -22,11 +22,7 @@ export default function PromptsPage() {
     const copyText = useCopyText();
     const { query, items: promptItems, tags: promptTags, categories: promptCategoryOptions, total: totalPrompts } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory });
 
-    useEffect(() => {
-        if (query.isError) {
-            message.error(query.error instanceof Error ? query.error.message : "获取提示词失败");
-        }
-    }, [message, query.error, query.isError]);
+    const emptyDescription = query.isError ? "提示词库暂不可用，请确认后端服务已启动" : "没有找到匹配的提示词";
 
     const toggleTag = (tag: string) => {
         if (tag === ALL_PROMPTS_OPTION) return setSelectedTags([]);
@@ -114,7 +110,7 @@ export default function PromptsPage() {
                                 />
                             ))}
                         </div>
-                        {promptItems.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的提示词" className="py-16" /> : null}
+                        {promptItems.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyDescription} className="py-16" /> : null}
                         <div className="mx-auto mt-6 max-w-7xl text-center text-xs text-stone-500 dark:text-stone-400">
                             {query.isFetchingNextPage ? "加载中..." : query.hasNextPage ? "继续向下滚动加载更多" : promptItems.length > 0 ? "已经到底了" : null}
                         </div>

@@ -1,8 +1,8 @@
 "use client";
 
 import { Check, Search } from "lucide-react";
-import { type UIEvent, useEffect, useState } from "react";
-import { App, Empty, Input, Modal, Spin, Tag } from "antd";
+import { type UIEvent, useState } from "react";
+import { Empty, Input, Modal, Spin, Tag } from "antd";
 
 import { ALL_PROMPTS_OPTION } from "@/services/api/prompts";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,6 @@ import { PromptCard } from "./prompt-card";
 import { usePromptList } from "./use-prompt-list";
 
 export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boolean; onOpenChange: (open: boolean) => void; onSelect: (prompt: string) => void }) {
-    const { message } = App.useApp();
     const [keyword, setKeyword] = useState("");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [selectedCategory, setSelectedCategory] = useState(ALL_PROMPTS_OPTION);
@@ -24,14 +23,11 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
         onOpenChange(false);
     };
 
-    useEffect(() => {
-        if (query.isError) message.error(query.error instanceof Error ? query.error.message : "获取提示词失败");
-    }, [message, query.error, query.isError]);
-
     const handleListScroll = (event: UIEvent<HTMLDivElement>) => {
         const target = event.currentTarget;
         if (query.hasNextPage && !query.isFetchingNextPage && target.scrollTop + target.clientHeight >= target.scrollHeight - 160) void query.fetchNextPage();
     };
+    const emptyDescription = query.isError ? "提示词库暂不可用，请确认后端服务已启动" : "没有找到匹配的提示词";
 
     return (
         <Modal title="提示词库" open={open} onCancel={() => onOpenChange(false)} footer={null} width={1040} centered>
@@ -75,7 +71,7 @@ export function PromptSelectDialog({ open, onOpenChange, onSelect }: { open: boo
                             <PromptCard key={item.id} item={item} onOpen={() => selectPrompt(item.prompt)} onCopy={() => selectPrompt(item.prompt)} actionLabel="使用此提示词" actionIcon={<Check className="size-3.5" />} actionType="primary" />
                         ))}
                     </div>
-                    {!query.isLoading && items.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的提示词" className="py-8" /> : null}
+                    {!query.isLoading && items.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyDescription} className="py-8" /> : null}
                     {query.isFetchingNextPage ? (
                         <div className="py-4 text-center">
                             <Spin size="small" />

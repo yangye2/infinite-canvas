@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, FolderPlus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { App, Button, Card, Drawer, Empty, Image, Input, Pagination, Spin, Tag, Typography } from "antd";
 import axios from "axios";
@@ -30,16 +30,11 @@ export default function AssetLibraryPage() {
         retry: false,
     });
 
-    useEffect(() => {
-        if (query.isError) {
-            message.error(query.error instanceof Error ? query.error.message : "获取素材库失败");
-        }
-    }, [message, query.error, query.isError]);
-
     const isReady = query.isFetched || query.isError;
     const items = query.data?.items || [];
     const availableTags = query.data?.tags || [];
     const total = query.data?.total || 0;
+    const emptyDescription = query.isError ? "素材库暂不可用，请确认后端服务已启动" : "没有找到素材";
 
     const toggleTag = (tag: string) => {
         setSelectedTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag]));
@@ -168,7 +163,7 @@ export default function AssetLibraryPage() {
                         ))}
                     </div>
 
-                    {!items.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到素材" className="py-20" /> : null}
+                    {!items.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyDescription} className="py-20" /> : null}
 
                     <div className="flex justify-center">
                         <Pagination current={page} pageSize={PAGE_SIZE} total={total} showSizeChanger={false} onChange={(nextPage) => setPage(nextPage)} />

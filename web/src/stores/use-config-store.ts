@@ -218,6 +218,8 @@ export const useConfigStore = create<ConfigStore>()(
                 set({ isPublicSettingsLoading: true });
                 try {
                     set({ publicSettings: await apiGet<AdminPublicSettings>("/api/settings") });
+                } catch {
+                    set({ publicSettings: null });
                 } finally {
                     set({ isPublicSettingsLoading: false });
                 }

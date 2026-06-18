@@ -39,9 +39,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
     const avatarUrl = user?.avatarUrl?.trim();
     const avatarText = (userName.trim()[0] || "U").toUpperCase();
     const naturalIconClass = "inline-flex size-7 shrink-0 items-center justify-center text-stone-600 transition hover:text-stone-950 dark:text-stone-300 dark:hover:text-white [&_svg]:size-4";
+    const secondaryIconClass = cn(naturalIconClass, !user && "hidden sm:inline-flex");
     const iconStyle: CSSProperties | undefined = variant === "canvas" ? { color: canvasTheme.node.text } : undefined;
     const versionStyle = iconStyle;
-    const gitHubClassName = "size-7 text-base";
+    const versionClassName = cn("shrink-0 cursor-pointer text-xs font-medium text-stone-500 transition hover:text-stone-950 dark:text-stone-400 dark:hover:text-white", !user && "hidden sm:inline-flex");
+    const gitHubClassName = cn("size-7 text-base", !user && "hidden sm:inline-flex");
     const gitHubStyle = iconStyle;
     const avatarStyle: CSSProperties | undefined = variant === "canvas" ? { borderColor: canvasTheme.toolbar.border, color: canvasTheme.node.text, background: "transparent" } : undefined;
     const menuItems: ItemType[] = [
@@ -54,22 +56,22 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
-            {!user ? (
-                <Link href="/login" className="mr-1 inline-flex h-8 shrink-0 items-center rounded-md border border-stone-300 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-500 hover:text-stone-950 dark:border-stone-700 dark:text-stone-200 dark:hover:border-stone-500 dark:hover:text-white" style={iconStyle}>
-                    登录
-                </Link>
-            ) : null}
-            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
+            <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={secondaryIconClass} style={iconStyle} aria-label="文档" title="文档">
                 <BookOpen className="size-4" />
             </a>
             {showConfig ? (
-                <button type="button" className={naturalIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
+                <button type="button" className={secondaryIconClass} style={iconStyle} onClick={() => openConfigDialog(false)} aria-label="配置" title="配置">
                     <Settings2 className="size-4" />
                 </button>
             ) : null}
             <AnimatedThemeToggler theme={theme} onThemeChange={setTheme} className={naturalIconClass} style={iconStyle} aria-label={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"} />
-            <VersionReleaseModal style={versionStyle} />
+            <VersionReleaseModal className={versionClassName} style={versionStyle} />
             <GitHubLink className={cn("bg-transparent hover:bg-transparent dark:hover:bg-transparent", gitHubClassName)} style={gitHubStyle} />
+            {!user ? (
+                <Link href="/login" className="ml-1 inline-flex h-8 shrink-0 items-center rounded-md border border-stone-300 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-500 hover:text-stone-950 dark:border-stone-700 dark:text-stone-200 dark:hover:border-stone-500 dark:hover:text-white" style={iconStyle}>
+                    登录
+                </Link>
+            ) : null}
             {variant === "canvas" && user ? (
                 <Tooltip title="当前算力点余额" placement="bottom">
                     <div className="flex h-8 shrink-0 items-center gap-1.5 px-1.5 text-xs font-medium tabular-nums opacity-75 transition hover:opacity-100" style={{ color: canvasTheme.node.text }}>

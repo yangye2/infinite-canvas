@@ -25,6 +25,10 @@ function safeRedirect(value: string | null): string {
     return cleaned;
 }
 
+function resolveLoginRedirect(redirect: string, role: string) {
+    return role !== "admin" && redirect.startsWith("/admin") ? "/" : redirect;
+}
+
 export default function LoginPage() {
     return (
         <Suspense fallback={null}>
@@ -40,6 +44,10 @@ function LoginContent() {
     const login = useUserStore((state) => state.login);
     const register = useUserStore((state) => state.register);
     const setSession = useUserStore((state) => state.setSession);
+    const clearSession = useUserStore((state) => state.clearSession);
+    const hydrateUser = useUserStore((state) => state.hydrateUser);
+    const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
     const isLoading = useUserStore((state) => state.isLoading);
     const linuxDoEnabled = useConfigStore((state) => state.publicSettings?.auth?.linuxDo?.enabled === true);
     const allowRegister = useConfigStore((state) => state.publicSettings?.auth?.allowRegister !== false);
@@ -47,17 +55,37 @@ function LoginContent() {
     const redirect = safeRedirect(searchParams.get("redirect"));
 
     useEffect(() => {
-        const token = searchParams.get("token");
+        const tokenParam = searchParams.get("token");
         const error = searchParams.get("error");
         if (error) message.error(error);
-        if (!token) return;
-        void fetchCurrentUser(token).then((user) => {
-            setSession(token, user);
-            message.success("登录成功");
-            router.replace(redirect);
+        if (!tokenParam) return;
+        void fetchCurrentUser(tokenParam)
+            .then((user) => {
+                if (user.role === "guest") {
+                    clearSession();
+                    message.error("登录状态无效，请重新登录");
+                    return;
+                }
+                setSession(tokenParam, user);
+                message.success("登录成功");
+                router.replace(resolveLoginRedirect(redirect, user.role));
+                router.refresh();
+            })
+            .catch((error) => {
+                clearSession();
+                message.error(error instanceof Error ? error.message : "登录失败");
+            });
+    }, [clearSession, message, redirect, router, searchParams, setSession]);
+
+    useEffect(() => {
+        if (searchParams.get("token")) return;
+        if (user && user.role !== "guest") {
+            router.replace(resolveLoginRedirect(redirect, user.role));
             router.refresh();
-        });
-    }, [message, redirect, router, searchParams, setSession]);
+            return;
+        }
+        if (token) void hydrateUser();
+    }, [hydrateUser, redirect, router, searchParams, token, user]);
 
     useEffect(() => {
         if (!allowRegister && mode === "register") setMode("login");
@@ -76,9 +104,8 @@ function LoginContent() {
             const action = mode === "register" ? register : login;
             const user = await action({ username: values.username, password: values.password });
             message.success(mode === "register" ? "注册成功" : "登录成功");
-            router.replace(redirect);
+            router.replace(resolveLoginRedirect(redirect, user.role));
             router.refresh();
-            if (user.role !== "admin") router.replace("/");
         } catch (error) {
             message.error(error instanceof Error ? error.message : "登录失败");
         }
