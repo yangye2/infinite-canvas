@@ -9,8 +9,10 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/basketikun/infinite-canvas/model"
 	"github.com/basketikun/infinite-canvas/service"
 )
 
@@ -53,7 +55,7 @@ func proxyAIGetRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := http.NewRequest(http.MethodGet, service.BuildModelChannelURL(channel, path), nil)
 	if err != nil {
 		Fail(w, "AI 接口请求失败")
@@ -88,7 +90,7 @@ func proxyAIRequest(w http.ResponseWriter, r *http.Request, path string) {
 		Fail(w, "AI 接口请求失败")
 		return
 	}
-	path = resolveAIProxyPath(channel.BaseURL, modelName, path)
+	path = resolveAIProxyPath(channel, modelName, path)
 	request, err := http.NewRequest(http.MethodPost, service.BuildModelChannelURL(channel, path), bytes.NewReader(body))
 	if err != nil {
 		log.Printf("AI proxy build request failed: url=%s err=%v", service.BuildModelChannelURL(channel, path), err)
@@ -213,8 +215,11 @@ func readAIRequestCount(body []byte, contentType string) int {
 
 var errMissingModel = &aiError{"缺少模型名称"}
 
-func resolveAIProxyPath(baseURL string, modelName string, path string) string {
-	if !isArkSeedanceVideo(baseURL, modelName) {
+func resolveAIProxyPath(channel model.ModelChannel, modelName string, path string) string {
+	if isAgnesVideo(channel, modelName) {
+		return resolveAgnesVideoPath(modelName, path)
+	}
+	if !isArkSeedanceVideo(channel.BaseURL, modelName) {
 		return path
 	}
 	if path == "/videos" {
@@ -224,6 +229,22 @@ func resolveAIProxyPath(baseURL string, modelName string, path string) string {
 		return "/contents/generations/tasks/" + strings.TrimPrefix(path, "/videos/")
 	}
 	return path
+}
+
+func resolveAgnesVideoPath(modelName string, path string) string {
+	if path == "/videos" {
+		return path
+	}
+	if strings.HasPrefix(path, "/videos/") && !strings.HasSuffix(path, "/content") {
+		videoID := strings.TrimPrefix(path, "/videos/")
+		return "/agnesapi?video_id=" + url.QueryEscape(videoID) + "&model_name=" + url.QueryEscape(modelName)
+	}
+	return path
+}
+
+func isAgnesVideo(channel model.ModelChannel, modelName string) bool {
+	model := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(model, "agnes-video") || (strings.EqualFold(channel.Protocol, "agnes") && strings.Contains(model, "video"))
 }
 
 func isArkSeedanceVideo(baseURL string, modelName string) bool {

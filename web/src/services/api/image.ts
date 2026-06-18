@@ -198,6 +198,9 @@ export async function requestGeneration(config: AiConfig, prompt: string) {
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
+    if (isAgnesImageConfig(config, config.model)) {
+        return requestAgnesGeneration(config, prompt, n, requestSize);
+    }
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(config, "/images/generations"),
@@ -227,6 +230,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const quality = normalizeQuality(config.quality);
     const requestSize = resolveRequestSize(quality, config.size);
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (isAgnesImageConfig(config, config.model)) {
+        if (mask) throw new Error("Agnes 图片接口暂不支持局部蒙版编辑");
+        return requestAgnesGeneration(config, requestPrompt, n, requestSize, references);
+    }
     const formData = new FormData();
     formData.set("model", config.model);
     formData.set("prompt", withSystemPrompt(config, requestPrompt));
@@ -240,7 +247,7 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         formData.set("size", requestSize);
     }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file) => formData.append("image", file));
+    files.forEach((file) => formData.append(isGrokImageModel(config.model) ? "image[]" : "image", file));
     if (mask) formData.set("mask", dataUrlToFile(mask));
 
     try {
@@ -251,6 +258,54 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     } catch (error) {
         throw new Error(readAxiosError(error, "请求失败"));
     }
+}
+
+async function requestAgnesGeneration(config: AiConfig, prompt: string, n: number, size: string | undefined, references: ReferenceImage[] = []) {
+    const results = await Promise.all(Array.from({ length: n }, () => requestSingleAgnesGeneration(config, prompt, size, references)));
+    refreshRemoteUser(config);
+    return results.flat();
+}
+
+async function requestSingleAgnesGeneration(config: AiConfig, prompt: string, size: string | undefined, references: ReferenceImage[]) {
+    const image = await Promise.all(references.map(resolveAgnesImageInput));
+    const payload = {
+        model: config.model,
+        prompt: withSystemPrompt(config, prompt),
+        size: size || normalizeAgnesImageSize(config.size),
+        ...(image.length ? { image } : { return_base64: true }),
+        extra_body: {
+            response_format: "b64_json",
+        },
+    };
+    try {
+        const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json") });
+        return parseImagePayload(response.data);
+    } catch (error) {
+        throw new Error(readAxiosError(error, "请求失败"));
+    }
+}
+
+async function resolveAgnesImageInput(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    if (/^https?:\/\//i.test(directUrl || "")) return directUrl;
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
+    return dataUrl;
+}
+
+function normalizeAgnesImageSize(size: string) {
+    const value = size.trim();
+    if (/^\d+x\d+$/i.test(value)) return value;
+    if (value.includes(":")) return resolveSize(undefined, value);
+    return "1024x1024";
+}
+
+function isAgnesImageConfig(config: AiConfig, model: string) {
+    return (config.channelMode === "local" && config.apiFormat === "agnes") || model.toLowerCase().includes("agnes-image");
+}
+
+function isGrokImageModel(model: string) {
+    return model.toLowerCase().includes("grok");
 }
 
 export async function requestImageQuestion(config: AiConfig, messages: ChatCompletionMessage[], onDelta: (text: string) => void) {

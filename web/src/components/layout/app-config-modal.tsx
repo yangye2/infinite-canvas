@@ -9,7 +9,7 @@ import { fetchImageModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
-import { filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ModelCapability } from "@/stores/use-config-store";
+import { defaultBaseUrlForApiFormat, filterModelsByCapability, useConfigStore, useEffectiveConfig, type AiConfig, type ApiCallFormat, type ModelCapability } from "@/stores/use-config-store";
 
 type ModelGroup = {
     capability: ModelCapability;
@@ -32,6 +32,10 @@ const modelGroups: ModelGroup[] = [
     { capability: "video", modelKey: "videoModel", modelsKey: "videoModels", defaultLabel: "默认视频模型", optionsLabel: "视频模型可选项" },
     { capability: "text", modelKey: "textModel", modelsKey: "textModels", defaultLabel: "默认文本模型", optionsLabel: "文本模型可选项" },
     { capability: "audio", modelKey: "audioModel", modelsKey: "audioModels", defaultLabel: "默认音频模型", optionsLabel: "音频模型可选项" },
+];
+const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
+    { label: "OpenAI", value: "openai" },
+    { label: "Agnes", value: "agnes" },
 ];
 
 const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
@@ -117,6 +121,12 @@ export function AppConfigModal() {
         } finally {
             setLoadingModels(false);
         }
+    };
+
+    const updateApiFormat = (apiFormat: ApiCallFormat) => {
+        const baseUrl = !config.baseUrl.trim() || config.baseUrl.trim() === defaultBaseUrlForApiFormat(config.apiFormat) ? defaultBaseUrlForApiFormat(apiFormat) : config.baseUrl;
+        updateConfig("apiFormat", apiFormat);
+        updateConfig("baseUrl", baseUrl);
     };
 
     const updateCapabilityModels = (group: ModelGroup, models: string[]) => {
@@ -214,6 +224,9 @@ export function AppConfigModal() {
                     {effectiveMode === "local" ? (
                         <>
                             <div className="grid gap-4 md:grid-cols-2">
+                                <Form.Item label="调用格式" className="mb-4">
+                                    <Select value={config.apiFormat} options={apiFormatOptions} onChange={updateApiFormat} />
+                                </Form.Item>
                                 <Form.Item label="Base URL" className="mb-4">
                                     <Input value={config.baseUrl} onChange={(event) => updateConfig("baseUrl", event.target.value)} />
                                 </Form.Item>

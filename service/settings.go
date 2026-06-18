@@ -56,6 +56,9 @@ func AdminTestChannelModel(index *int, channel model.ModelChannel, modelName str
 	if err != nil {
 		return "", err
 	}
+	if isAgnesMediaModelName(modelName) {
+		return testAgnesMediaChannelModel(resolved, modelName)
+	}
 	if isArkAgentPlanChannel(resolved) || isSeedanceModelName(modelName) {
 		return testArkSeedanceChannelModel(resolved, modelName)
 	}
@@ -201,8 +204,21 @@ func SelectModelChannel(modelName string) (model.ModelChannel, error) {
 
 func BuildModelChannelURL(channel model.ModelChannel, path string) string {
 	baseURL := normalizeModelChannelBaseURL(channel.BaseURL)
+	if strings.EqualFold(channel.Protocol, "agnes") {
+		return buildAgnesChannelURL(baseURL, path)
+	}
 	lowerBaseURL := strings.ToLower(baseURL)
 	if !strings.HasSuffix(lowerBaseURL, "/v1") && !strings.HasSuffix(lowerBaseURL, "/api/v3") && !strings.HasSuffix(lowerBaseURL, "/api/plan/v3") {
+		baseURL += "/v1"
+	}
+	return baseURL + path
+}
+
+func buildAgnesChannelURL(baseURL string, path string) string {
+	if strings.HasPrefix(path, "/agnesapi") {
+		return strings.TrimSuffix(strings.TrimSuffix(baseURL, "/v1"), "/V1") + path
+	}
+	if !strings.HasSuffix(strings.ToLower(baseURL), "/v1") {
 		baseURL += "/v1"
 	}
 	return baseURL + path
@@ -283,12 +299,12 @@ func repairDefaultModel(current string, models []string, preferred func(string) 
 
 func isVideoModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedance") || strings.Contains(name, "video")
+	return strings.Contains(name, "agnes-video") || strings.Contains(name, "seedance") || strings.Contains(name, "video")
 }
 
 func isImageModelName(modelName string) bool {
 	name := strings.ToLower(strings.TrimSpace(modelName))
-	return strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
+	return strings.Contains(name, "agnes-image") || strings.Contains(name, "grok-imagine-image") || strings.Contains(name, "seedream") || strings.Contains(name, "gpt-image") || strings.Contains(name, "image")
 }
 
 func isTextModelName(modelName string) bool {
@@ -430,6 +446,24 @@ func testArkSeedanceChannelModel(channel model.ModelChannel, modelName string) (
 		return "Seedance 视频模型不会发送 /chat/completions 文本测试。已检查 Base URL、API Key 和模型名非空；未调用视频生成接口，因此未验证套餐额度或模型权限。", nil
 	}
 	return "Agent Plan / Seedance 视频模型配置格式已通过。后台测试不会调用视频生成接口，因此未验证 API Key、套餐额度或模型权限；请在画布中使用视频生成验证。", nil
+}
+
+func testAgnesMediaChannelModel(channel model.ModelChannel, modelName string) (string, error) {
+	if strings.TrimSpace(modelName) == "" {
+		return "", errors.New("缺少模型名称")
+	}
+	if strings.TrimSpace(channel.BaseURL) == "" {
+		return "", safeMessageError{message: "缺少接口地址"}
+	}
+	if strings.TrimSpace(channel.APIKey) == "" {
+		return "", safeMessageError{message: "缺少 API Key"}
+	}
+	return "Agnes 图片/视频模型配置格式已通过。后台测试不会调用生成接口，因此未验证额度或模型权限；请在画布中发起生成验证。", nil
+}
+
+func isAgnesMediaModelName(modelName string) bool {
+	name := strings.ToLower(strings.TrimSpace(modelName))
+	return strings.Contains(name, "agnes-image") || strings.Contains(name, "agnes-video")
 }
 
 func readAdminChannelError(body []byte, statusCode int, fallback string) error {
