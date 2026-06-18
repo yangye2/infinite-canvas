@@ -54,6 +54,11 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
 
     return (
         <div className="inline-flex shrink-0 items-center gap-1">
+            {!user ? (
+                <Link href="/login" className="mr-1 inline-flex h-8 shrink-0 items-center rounded-md border border-stone-300 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-500 hover:text-stone-950 dark:border-stone-700 dark:text-stone-200 dark:hover:border-stone-500 dark:hover:text-white" style={iconStyle}>
+                    登录
+                </Link>
+            ) : null}
             <a href={DOCS_URL} target="_blank" rel="noopener noreferrer" className={naturalIconClass} style={iconStyle} aria-label="文档" title="文档">
                 <BookOpen className="size-4" />
             </a>
@@ -77,11 +82,6 @@ export function UserStatusActions({ showConfig = true, variant = "default", onOp
                 <button type="button" className={naturalIconClass} style={iconStyle} onClick={onOpenShortcuts} aria-label="快捷键" title="快捷键">
                     <Keyboard className="size-4" />
                 </button>
-            ) : null}
-            {!user ? (
-                <Link href="/login" className="px-1.5 text-sm font-medium text-stone-600 underline-offset-4 transition hover:text-stone-950 hover:underline dark:text-stone-300 dark:hover:text-stone-100" style={iconStyle}>
-                    登录
-                </Link>
             ) : null}
             {user ? (
                 <div ref={accountRef}>
