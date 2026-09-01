@@ -1,0 +1,5 @@
+# 保证在 Windows 上检出时，进入 Linux 容器的文件仍是 LF，避免 nginx/shell 解析失败。
+*.sh text eol=lf
+*.conf text eol=lf
+Dockerfile text eol=lf
+*.env text eol=lf
