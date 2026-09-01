@@ -2,12 +2,6 @@ import axios from "axios";
 
 export type ApiParams = Record<string, string | string[] | number | number[] | undefined>;
 
-type ApiResponse<T> = {
-    code: number;
-    data: T;
-    msg: string;
-};
-
 export function compactApiParams(params: ApiParams) {
     return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== "" && value !== undefined && (!Array.isArray(value) || value.length > 0))) as ApiParams;
 }
@@ -21,6 +15,12 @@ export function serializeApiParams(params?: ApiParams) {
     }
     return queryParams;
 }
+
+type ApiResponse<T> = {
+    code: number;
+    data: T;
+    msg: string;
+};
 
 export async function apiGet<T>(url: string, params?: ApiParams, token?: string) {
     return apiRequest<T>({

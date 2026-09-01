@@ -1,14 +1,9 @@
 .git
 .idea
-docs2
+.agents
 data
-docs/.next
-docs/.source
-docs/node_modules
-docs/out
-web/.next
 web/node_modules
-web/out
+web/dist
 *.log
 .env*
 !.env.example
