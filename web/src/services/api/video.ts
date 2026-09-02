@@ -263,8 +263,15 @@ async function createAgnesVideoV25RequestBody(config: AiConfig, model: string, p
     if (input.references.length) body.images = await Promise.all(input.references.map(agnesVideoV25ReferenceUrl));
     if (input.audioReferences.length) body.audios = await Promise.all(input.audioReferences.map(agnesVideoV25ReferenceUrl));
     if (input.videoReferences.length) {
-        const urls = await Promise.all(input.videoReferences.map(agnesVideoV25ReferenceUrl));
-        body.videos = urls.map((url) => ({ url }));
+        // 文档 videos[].url 可选字段：start_seconds（起始秒，默认 0）、require_audio（是否必须含音轨，默认 false）
+        body.videos = await Promise.all(
+            input.videoReferences.map(async (video) => {
+                const item: Record<string, unknown> = { url: await agnesVideoV25ReferenceUrl(video) };
+                if (typeof video.startSeconds === "number" && Number.isFinite(video.startSeconds)) item.start_seconds = video.startSeconds;
+                if (typeof video.requireAudio === "boolean") item.require_audio = video.requireAudio;
+                return item;
+            }),
+        );
     }
     return body;
 }

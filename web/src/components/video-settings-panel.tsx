@@ -8,7 +8,7 @@ import { boolConfig, isSeedanceFastOrMiniModel, isSeedanceVideoConfig, normalize
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import { isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
 import { getVideoParamCapabilities } from "@/lib/model-param-capabilities";
-import { channelProtocolForConfig, type AiConfig } from "@/stores/use-config-store";
+import { channelIdForActiveModel, channelProtocolForConfig, localChannelForActiveModel, type AiConfig } from "@/stores/use-config-store";
 
 export const videoResolutionOptions = [
     { value: "720", label: "720p" },
@@ -16,6 +16,7 @@ export const videoResolutionOptions = [
     { value: "1080", label: "1080p" },
     { value: "2k", label: "2K" },
     { value: "4k", label: "4K" },
+    { value: "960", label: "960p" },
 ];
 const resolutionButtonOptions = videoResolutionOptions.slice(0, 2);
 
@@ -79,6 +80,12 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
     const updateResolution = (value: string) => {
         const nextResolution = normalizeVideoResolutionValue(value);
         onConfigChange("vquality", nextResolution);
+        // Agnes 2.5 用 config.size 当 aspect_ratio，档位像素交给服务端映射，不走 seedance 像素表。
+        if (paramCaps?.resolutions) {
+            const ratio = normalizeSeedanceRatio(config.size);
+            onConfigChange("size", ratio === "adaptive" ? "16:9" : ratio);
+            return;
+        }
         onConfigChange("size", videoSizeForResolution(nextResolution, config.size));
     };
     const updateDimension = (key: "width" | "height", value: number | null) => {
@@ -97,12 +104,18 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
         onConfigChange("vquality", nearestResolution);
     };
     // 参数能力限制：已知不支持/不在白名单的选项禁用；未知模型（caps=undefined）不限制。
-    const resolutionItems = paramCaps?.resolutions ? videoResolutionOptions.filter((item) => paramCaps.resolutions!.includes(item.value)) : resolutionButtonOptions;
+    const resolutionItems = paramCaps?.resolutions ? videoResolutionOptions.filter((item) => paramCaps.resolutions!.includes(item.value)).sort((a, b) => paramCaps.resolutions!.indexOf(a.value) - paramCaps.resolutions!.indexOf(b.value)) : resolutionButtonOptions;
     const allowDimension = size !== "auto" && paramCaps?.allowCustomDimensions !== false;
     const isRatioDisabled = (ratioValue: string) => {
         if (!paramCaps) return false;
         if (ratioValue === "adaptive") return paramCaps.allowAdaptiveRatio === false;
         return Boolean(paramCaps.ratios && !paramCaps.ratios.includes(ratioValue));
+    };
+    // Agnes 2.5 分辨率档位（720P/960P/2K）无 seedance 像素映射，副标题显示档位名；其他模型仍显示像素。
+    const ratioSubtitle = (ratioValue: string) => {
+        if (ratioValue === "adaptive") return "adaptive";
+        if (paramCaps?.resolutions && !["480", "720", "1080", "4k"].includes(resolution)) return videoResolutionLabel(resolution);
+        return seedancePixelLabel(resolution, ratioValue);
     };
     const secondPresets = paramCaps?.seconds?.presets || (cogVideoX3 ? [5, 10] : secondOptions);
 
@@ -156,7 +169,9 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
                                         "size",
                                         item.value === "adaptive"
                                             ? "auto"
-                                            : seedancePixelLabel(resolution, item.value),
+                                            : paramCaps?.ratios
+                                              ? item.value
+                                              : seedancePixelLabel(resolution, item.value),
                                     )
                                 }
                             >
@@ -167,9 +182,7 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
                                 />
                                 <span>{item.label}</span>
                                 <span className="text-[10px] leading-none opacity-55">
-                                    {item.value === "adaptive"
-                                        ? "adaptive"
-                                        : seedancePixelLabel(resolution, item.value)}
+                                    {ratioSubtitle(item.value)}
                                 </span>
                             </button>
                         ))}

@@ -47,8 +47,8 @@ export function getVideoParamCapabilities(modelName: string): VideoParamCapabili
     if (!isAgnesVideoV25Model(modelName)) return undefined;
     const flash = modelKey(modelName) === "agnes-video-2-5-flash";
     return {
-        // 2.5 支持 720P/960P/2K；flash 仅 720P。UI 现有档位映射为 720/2k（960 暂无对应档位）。
-        resolutions: flash ? ["720"] : ["720", "2k"],
+        // 2.5 支持 720P/960P/2K；flash 仅 720P
+        resolutions: flash ? ["720"] : ["720", "960", "2k"],
         ratios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
         allowAdaptiveRatio: false,
         seconds: { presets: [4, 5, 6, 8, 10, 12], min: 4, max: 12 },
