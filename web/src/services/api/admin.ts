@@ -381,7 +381,8 @@ export type AdminWorkflowTemplate = {
     name: string;
     category: string;
     description: string;
-    data: string; // JSON: variables + config
+    // 后端 json.RawMessage 序列化为对象；历史数据可能存成字符串，读取时兼容
+    data: Record<string, unknown> | string;
     scope: string;
     createdAt: string;
     updatedAt: string;

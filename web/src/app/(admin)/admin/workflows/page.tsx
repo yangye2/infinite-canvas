@@ -103,19 +103,28 @@ const WORKFLOW_DEFAULTS = {
     },
 };
 
-function parseWorkflowData(raw: string | undefined): WorkflowData {
-    try {
-        const parsed = JSON.parse(raw || "") as Partial<WorkflowData>;
-        const base = parsed.mode === "multi_image_series" ? WORKFLOW_DEFAULTS.series : WORKFLOW_DEFAULTS.single;
-        return {
-            mode: parsed.mode === "multi_image_series" ? "multi_image_series" : "single_image",
-            variables: Array.isArray(parsed.variables) ? parsed.variables.map(normalizeVariable) : [],
-            config: { ...base.config, ...(parsed.config || {}) },
-            seriesConfig: { ...base.seriesConfig, ...(parsed.seriesConfig || {}) },
-        };
-    } catch {
+// 兼容三种形态：对象（正常）、JSON 字符串（历史误存）、双重编码字符串；全部归一为 WorkflowData。
+function parseWorkflowData(raw: Record<string, unknown> | string | undefined): WorkflowData {
+    let parsed: unknown = raw;
+    for (let depth = 0; depth < 2 && typeof parsed === "string"; depth++) {
+        try {
+            parsed = JSON.parse(parsed);
+        } catch {
+            parsed = null;
+            break;
+        }
+    }
+    if (!parsed || typeof parsed !== "object") {
         return { ...WORKFLOW_DEFAULTS.single, variables: [] };
     }
+    const source = parsed as Partial<WorkflowData>;
+    const base = source.mode === "multi_image_series" ? WORKFLOW_DEFAULTS.series : WORKFLOW_DEFAULTS.single;
+    return {
+        mode: source.mode === "multi_image_series" ? "multi_image_series" : "single_image",
+        variables: Array.isArray(source.variables) ? source.variables.map(normalizeVariable) : [],
+        config: { ...base.config, ...(source.config || {}) },
+        seriesConfig: { ...base.seriesConfig, ...(source.seriesConfig || {}) },
+    };
 }
 
 function normalizeVariable(variable: WorkflowVariable): WorkflowVariable {
@@ -254,7 +263,8 @@ export default function AdminWorkflowsPage() {
 
     const save = async () => {
         const values = await form.validateFields();
-        const payload: Partial<AdminWorkflowTemplate> = { ...editingItem, ...values, data: JSON.stringify(data) };
+        // data 必须以对象发送：后端 json.RawMessage 原样捕获，stringify 后会双重编码
+        const payload: Partial<AdminWorkflowTemplate> = { ...editingItem, ...values, data: data as unknown as Record<string, unknown> };
         saveMutation.mutate(payload);
     };
 

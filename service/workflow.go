@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -92,6 +93,27 @@ func ListWorkflowTemplates() ([]CreativeWorkflowPayload, error) {
 	return result, nil
 }
 
+// normalizeWorkflowTemplateData 规范化模板 Data：
+// 1) 若客户端误传 JSON 字符串字面量（双重编码），解码一层；2) 校验为合法 JSON 对象。
+func normalizeWorkflowTemplateData(raw json.RawMessage) (json.RawMessage, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return json.RawMessage("{}"), nil
+	}
+	if trimmed[0] == '"' {
+		var decoded string
+		if err := json.Unmarshal(trimmed, &decoded); err != nil {
+			return nil, errors.New("工作流数据格式错误")
+		}
+		trimmed = bytes.TrimSpace([]byte(decoded))
+	}
+	var check map[string]any
+	if err := json.Unmarshal(trimmed, &check); err != nil {
+		return nil, errors.New("工作流数据必须是 JSON 对象")
+	}
+	return trimmed, nil
+}
+
 // SaveWorkflowTemplate 后台：保存平台级工作流模板（scope 强制 public、owner 清空）。
 func SaveWorkflowTemplate(payload CreativeWorkflowPayload) (CreativeWorkflowPayload, error) {
 	scope := strings.ToLower(strings.TrimSpace(payload.Scope))
@@ -131,9 +153,11 @@ func SaveWorkflowTemplate(payload CreativeWorkflowPayload) (CreativeWorkflowPayl
 	if record.Name == "" {
 		return CreativeWorkflowPayload{}, errors.New("请输入工作流名称")
 	}
-	if strings.TrimSpace(record.Data) == "" {
-		record.Data = "{}"
+	normalizedData, err := normalizeWorkflowTemplateData(json.RawMessage(record.Data))
+	if err != nil {
+		return CreativeWorkflowPayload{}, err
 	}
+	record.Data = string(normalizedData)
 	saved, err := repository.SaveCreativeWorkflow(record)
 	if err != nil {
 		return CreativeWorkflowPayload{}, err
