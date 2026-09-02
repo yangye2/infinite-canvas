@@ -46,8 +46,41 @@ type WorkflowAgentDraftResponse struct {
 // WorkflowSystemOwner 系统工作流模板的属主标记（空字符串 = 平台级公共模板）。
 const WorkflowSystemOwner = ""
 
+// seedSystemWorkflowTemplates 首次访问时自动创建默认模板（幂等）。
+func seedSystemWorkflowTemplates() {
+	records, err := repository.ListSystemWorkflowTemplates()
+	if err != nil || len(records) > 0 {
+		return
+	}
+	for _, seed := range []CreativeWorkflowPayload{
+		defaultSingleTemplate(),
+		defaultSeriesTemplate(),
+	} {
+		_, _ = SaveWorkflowTemplate(seed)
+	}
+}
+
+func defaultSingleTemplate() CreativeWorkflowPayload {
+	return CreativeWorkflowPayload{
+		Name:        "电商海报生成",
+		Category:    "电商海报",
+		Description: "固定海报构图、商业摄影质感和营销文案结构，只替换产品与卖点。",
+		Data:        json.RawMessage(`{"mode":"single_image","variables":[{"id":"seed-product","key":"product_name","label":"产品名称","type":"text","required":true,"defaultValue":"","options":[]},{"id":"seed-selling","key":"selling_points","label":"核心卖点","type":"textarea","required":true,"defaultValue":"","options":[]},{"id":"seed-campaign","key":"campaign","label":"活动信息","type":"text","required":true,"defaultValue":"","options":[]}],"config":{"apiMode":"images","quality":"auto","size":"auto","count":"1","timeout":"600","systemPrompt":"","promptTemplate":"为 {{product_name}} 生成一张高端电商海报。\n核心卖点：{{selling_points}}\n活动信息：{{campaign}}\n要求：主体清晰、构图高级、商品有强烈质感，画面适合社交媒体和电商首图。","negativePrompt":""},"seriesConfig":{}}`),
+	}
+}
+
+func defaultSeriesTemplate() CreativeWorkflowPayload {
+	return CreativeWorkflowPayload{
+		Name:        "小红书文章配图组",
+		Category:    "多图创作",
+		Description: "根据文章主题和内容生成多张风格统一的封面、步骤、要点和总结配图。",
+		Data:        json.RawMessage(`{"mode":"multi_image_series","variables":[{"id":"seed-topic","key":"article_topic","label":"文章主题","type":"text","required":true,"defaultValue":"","options":[]},{"id":"seed-content","key":"article_content","label":"文章内容","type":"textarea","required":true,"defaultValue":"","options":[]},{"id":"seed-style","key":"visual_style","label":"视觉风格","type":"text","required":true,"defaultValue":"","options":[]}],"config":{"apiMode":"images","quality":"auto","size":"auto","count":"1","timeout":"600","systemPrompt":"","promptTemplate":"为小红书/公众号文章《{{article_topic}}》生成系列配图。\n文章内容：{{article_content}}\n视觉风格：{{visual_style}}\n要求：画面适合移动端阅读，主题连贯，每张图表达一个清晰信息点。","negativePrompt":""},"seriesConfig":{"targetCount":"6","promptInstruction":"拆成封面图、问题/痛点图、核心步骤图、细节说明图、对比/案例图和总结图；每张图都需要独立完整的图片提示词。","reviewRequired":true,"concurrency":"3"}}`),
+	}
+}
+
 // ListWorkflowTemplates 后台：返回所有平台级公共模板（scope=public 且 owner 为空）。
 func ListWorkflowTemplates() ([]CreativeWorkflowPayload, error) {
+	seedSystemWorkflowTemplates()
 	records, err := repository.ListSystemWorkflowTemplates()
 	if err != nil {
 		return nil, err
