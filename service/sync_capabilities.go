@@ -62,16 +62,9 @@ func parseSyncOverride(raw string) map[string]*bool {
 }
 
 // UserSyncCapabilities 计算用户最终的同步能力：
-// 系统设置提供默认值，用户级 syncOverride 覆盖优先；管理员不受限制。
+// 系统设置提供默认值，用户级 syncOverride 覆盖优先（管理员账号同样生效）。
 func UserSyncCapabilities(user model.AuthUser) map[string]bool {
 	defaults := systemSyncDefaults()
-	if user.Role == model.UserRoleAdmin {
-		return map[string]bool{
-			SyncCapabilityUserData:  true,
-			SyncCapabilityWorkflows: true,
-			SyncCapabilityAssets:    true,
-		}
-	}
 	override := map[string]*bool{}
 	if saved, ok, err := repository.GetUserByID(user.ID); err == nil && ok {
 		override = parseSyncOverride(saved.SyncOverride)
