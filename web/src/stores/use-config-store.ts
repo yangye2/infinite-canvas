@@ -10,7 +10,7 @@ import { useUserStore } from "@/stores/use-user-store";
 
 export type LocalModelChannel = {
     id: string;
-    protocol: "openai" | "gemini" | "grok2api" | "metaso" | "apimart" | "kie" | "mimo";
+    protocol: "openai" | "gemini" | "grok2api" | "metaso" | "apimart" | "kie" | "mimo" | "agnes";
     name: string;
     baseUrl: string;
     apiKey: string;
@@ -269,7 +269,9 @@ function isVideoModelName(model: string) {
 
 function isImageModelName(model: string) {
     const value = model.toLowerCase();
+    if (value.startsWith("agnes-2.")) return false; // Agnes 文本模型（agnes-2.0/2.5-flash）不算图像
     return !isVideoModelName(model) && !isAudioModelName(model) && (
+        value.startsWith("agnes-image") ||
         value.includes("image") ||
         value.includes("nano-banana") ||
         value.includes("seedream") ||

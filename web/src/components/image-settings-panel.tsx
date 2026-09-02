@@ -5,6 +5,9 @@ import { ConfigProvider, Switch } from "antd";
 
 import { type CanvasTheme } from "@/lib/canvas-theme";
 import type { AiConfig } from "@/stores/use-config-store";
+import { isAgnesImageModel } from "@/lib/model-param-capabilities";
+
+const AGNES_IMAGE_WHITELIST_RATIOS = ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"];
 
 const qualityOptions = [
     { value: "auto", label: "自动" },
@@ -57,6 +60,13 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
     const activeSize = config.size || "auto";
     const selectedAspect = aspectOptions.find((item) => (item.size || item.value) === activeSize || item.value === activeSize);
     const dimensions = readSizeDimensions(activeSize, selectedAspect || aspectOptions[0]);
+    // Agnes 图像：宽高比白名单固定为 8 个，"auto 自适应"不支持 → 禁用。
+    const agnesAspectDisabled = (value: string) => {
+        if (!isAgnesImageModel(config.model)) return false;
+        if (value === "auto") return true;
+        const ratioCandidate = value.includes("-") ? value.split("-")[0] : value;
+        return !AGNES_IMAGE_WHITELIST_RATIOS.includes(ratioCandidate);
+    };
     const selectAspect = (value: string) => {
         const option = aspectOptions.find((item) => item.value === value);
         onConfigChange("size", option?.size || option?.value || "auto");
@@ -117,7 +127,8 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                                     <button
                                         key={item.value}
                                         type="button"
-                                        className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80"
+                                        disabled={agnesAspectDisabled(item.value)}
+                                        className="flex h-[72px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-35"
                                         style={{ borderColor: selectedAspect?.value === item.value ? theme.node.text : theme.node.stroke, background: "transparent", color: theme.node.text }}
                                         onMouseDown={(event) => event.stopPropagation()}
                                         onClick={() => selectAspect(item.value)}

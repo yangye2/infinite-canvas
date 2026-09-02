@@ -7,6 +7,7 @@ import { isGeminiVeo31Model, normalizeGeminiVideoDuration, normalizeGeminiVideoR
 import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio } from "@/lib/seedance-video";
 import { isKIEGrokVideoModel, isKIEKlingV3Config, kieKlingOmniVariant } from "@/components/video-settings-panel";
 import { isAgnesVideoV25Model, isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
+import { AGNES_VIDEO_V25_FLASH, isAgnesVideoV25FlashModel } from "@/lib/model-param-capabilities";
 import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
 import { imageToDataUrl, resolveImageUrl } from "@/services/image-storage";
 import { buildApiUrl, channelIdForActiveModel, channelProtocolForConfig, directAIProviderForConfig, localChannelForActiveModel, type AiConfig, type VideoElementReference } from "@/stores/use-config-store";
@@ -238,13 +239,23 @@ async function createAgnesVideoV25RequestBody(config: AiConfig, model: string, p
     const hasReferences = Boolean(input.references.length || input.videoReferences.length || input.audioReferences.length);
     if (hasFrames && hasReferences) throw new VideoRequestError("Agnes Video 2.5 的首尾帧不能和普通参考素材同时使用");
 
+    const flash = isAgnesVideoV25FlashModel(model);
+    if (flash && input.videoReferences.length) throw new VideoRequestError("Agnes Video 2.5 Flash 不支持视频参考素材");
+    if (flash && input.references.length > AGNES_VIDEO_V25_FLASH.maxReferenceImages) {
+        throw new VideoRequestError(`Agnes Video 2.5 Flash 最多支持 ${AGNES_VIDEO_V25_FLASH.maxReferenceImages} 张参考图片`);
+    }
+    if (flash && input.audioReferences.length > AGNES_VIDEO_V25_FLASH.maxReferenceAudios) {
+        throw new VideoRequestError(`Agnes Video 2.5 Flash 最多支持 ${AGNES_VIDEO_V25_FLASH.maxReferenceAudios} 段参考音频`);
+    }
+
     const ratio = normalizeSeedanceRatio(config.size);
     const body: Record<string, unknown> = {
         model,
         prompt,
         mode: hasFrames ? "keyframe" : hasReferences ? "reference" : "text",
         seconds: String(Math.min(12, Math.max(4, Math.floor(Number(config.videoSeconds) || 5)))),
-        size: "720P",
+        // 分辨率档位：720/960/2k → 720P/960P/2K；flash 固定 720P（文档：其他值返回 400）
+        size: flash ? "720P" : agnesVideo25Size(config.vquality),
         aspect_ratio: ratio === "adaptive" ? "16:9" : ratio,
     };
     if (input.firstFrame) body.first_frame = await agnesVideoV25ReferenceUrl(input.firstFrame);
@@ -256,6 +267,14 @@ async function createAgnesVideoV25RequestBody(config: AiConfig, model: string, p
         body.videos = urls.map((url) => ({ url }));
     }
     return body;
+}
+
+// vquality → 文档 size 档位；未知值回落 720P。
+function agnesVideo25Size(vquality?: string) {
+    const value = String(vquality || "").trim().toLowerCase();
+    if (value === "960") return "960P";
+    if (value === "2k" || value === "2K") return "2K";
+    return "720P";
 }
 
 async function createVideoRequestBody(config: AiConfig, model: string, prompt: string, input: Required<VideoReferenceInput>) {

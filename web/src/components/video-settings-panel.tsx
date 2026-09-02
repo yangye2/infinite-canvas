@@ -6,7 +6,8 @@ import { Input, Switch } from "antd";
 import { ImageSettingsTheme } from "@/components/image-settings-panel";
 import { boolConfig, isSeedanceFastOrMiniModel, isSeedanceVideoConfig, normalizeSeedanceDuration, normalizeSeedanceRatio, normalizeSeedanceResolution, seedanceDurationOptions, seedancePixelLabel, seedanceRatioOptions, seedanceResolutionOptions } from "@/lib/seedance-video";
 import { type CanvasTheme } from "@/lib/canvas-theme";
-import { COGVIDEOX3_DURATIONS, isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
+import { isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
+import { getVideoParamCapabilities } from "@/lib/model-param-capabilities";
 import { channelProtocolForConfig, type AiConfig } from "@/stores/use-config-store";
 
 export const videoResolutionOptions = [
@@ -68,7 +69,8 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
     const model = modelName || config.model || config.videoModel;
     const grokMode = config.videoMode === "fun" || config.videoMode === "spicy" ? config.videoMode : "normal";
     const cogVideoX3 = isCogVideoX3Model(model);
-    const seconds = cogVideoX3 ? normalizeCogVideoX3Duration(config.videoSeconds) : config.videoSeconds || "6";
+    const paramCaps = getVideoParamCapabilities(model);
+    const seconds = cogVideoX3 ? normalizeCogVideoX3Duration(config.videoSeconds) : paramCaps?.seconds ? String(Math.min(paramCaps.seconds.max, Math.max(paramCaps.seconds.min, Math.floor(Number(config.videoSeconds) || paramCaps.seconds.min)))) : config.videoSeconds || "6";
     const size = normalizeVideoSizeValue(config.size);
     const dimensions = readSizeDimensions(size);
     const resolution = normalizeVideoResolutionValue(config.vquality);
@@ -94,6 +96,15 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
         onConfigChange("size", `${width}x${height}`);
         onConfigChange("vquality", nearestResolution);
     };
+    // 参数能力限制：已知不支持/不在白名单的选项禁用；未知模型（caps=undefined）不限制。
+    const resolutionItems = paramCaps?.resolutions ? videoResolutionOptions.filter((item) => paramCaps.resolutions!.includes(item.value)) : resolutionButtonOptions;
+    const allowDimension = size !== "auto" && paramCaps?.allowCustomDimensions !== false;
+    const isRatioDisabled = (ratioValue: string) => {
+        if (!paramCaps) return false;
+        if (ratioValue === "adaptive") return paramCaps.allowAdaptiveRatio === false;
+        return Boolean(paramCaps.ratios && !paramCaps.ratios.includes(ratioValue));
+    };
+    const secondPresets = paramCaps?.seconds?.presets || (cogVideoX3 ? [5, 10] : secondOptions);
 
     return (
         <ImageSettingsTheme theme={theme}>
@@ -112,26 +123,27 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
                 ) : null}
                 <SettingGroup title="清晰度" color={theme.node.muted}>
                     <div className="grid grid-cols-3 gap-2.5">
-                        {resolutionButtonOptions.map((item) => (
+                        {resolutionItems.map((item) => (
                             <OptionPill key={item.value} selected={resolution === item.value} theme={theme} onClick={() => updateResolution(item.value)}>
                                 {item.label}
                             </OptionPill>
                         ))}
-                        <ResolutionInput value={resolution} theme={theme} onChange={updateResolution} />
+                        {paramCaps?.resolutions ? null : <ResolutionInput value={resolution} theme={theme} onChange={updateResolution} />}
                     </div>
                 </SettingGroup>
                 <SettingGroup title="尺寸" color={theme.node.muted}>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2.5">
-                        <DimensionInput prefix="W" value={dimensions.width} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("width", value)} />
+                        <DimensionInput prefix="W" value={dimensions.width} disabled={!allowDimension} theme={theme} onChange={(value) => updateDimension("width", value)} />
                         <span className="text-lg opacity-45">↔</span>
-                        <DimensionInput prefix="H" value={dimensions.height} disabled={size === "auto"} theme={theme} onChange={(value) => updateDimension("height", value)} />
+                        <DimensionInput prefix="H" value={dimensions.height} disabled={!allowDimension} theme={theme} onChange={(value) => updateDimension("height", value)} />
                     </div>
                     <div className="grid grid-cols-3 gap-2.5">
                         {seedanceRatioOptions.map((item) => (
                             <button
                                 key={item.value}
                                 type="button"
-                                className="flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80"
+                                disabled={isRatioDisabled(item.value)}
+                                className="flex h-[68px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border bg-transparent px-1 text-sm transition hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-35"
                                 style={{
                                     borderColor: normalizeSeedanceRatio(config.size) === item.value
                                         ? theme.node.text
@@ -167,12 +179,12 @@ export function VideoSettingsPanel({ config, modelName, onConfigChange, theme, s
                     <>
                         <SettingGroup title="秒数" color={theme.node.muted}>
                             <div className="grid grid-cols-3 gap-2.5">
-                                {(cogVideoX3 ? COGVIDEOX3_DURATIONS : secondOptions).map((value) => (
+                                {secondPresets.map((value) => (
                                     <OptionPill key={value} selected={seconds === String(value)} theme={theme} onClick={() => onConfigChange("videoSeconds", String(value))}>
                                         {value}s
                                     </OptionPill>
                                 ))}
-                                {cogVideoX3 ? null : <NumberInput value={seconds} min={1} max={30} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />}
+                                {paramCaps?.seconds ? null : cogVideoX3 ? null : <NumberInput value={seconds} min={1} max={30} theme={theme} onChange={(value) => onConfigChange("videoSeconds", value)} />}
                             </div>
                         </SettingGroup>
                         {audioGenerationEnabled ? <AudioGenerationSetting checked={generateAudio} theme={theme} onChange={(checked) => onConfigChange("videoGenerateAudio", String(checked))} /> : null}

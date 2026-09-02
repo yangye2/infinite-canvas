@@ -7,7 +7,9 @@ export function isCogVideoX3Model(modelName: string) {
 }
 
 export function isAgnesVideoV25Model(modelName: string) {
-    return modelKey(modelName) === "agnes-video-2-5";
+    const key = modelKey(modelName);
+    // agnes-video-2.5 与 agnes-video-2.5-flash 共用同一套 v2.5 参数体系
+    return key === "agnes-video-2-5" || key === "agnes-video-2-5-flash";
 }
 
 export const COGVIDEOX3_DURATIONS = ["5", "10"] as const;

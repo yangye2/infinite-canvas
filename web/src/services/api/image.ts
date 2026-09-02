@@ -1375,20 +1375,38 @@ function isAgnesImageModel(model: string) {
     return m.startsWith("agnes-image") || m.startsWith("agens-image");
 }
 
-function isAgnesImage21Model(model: string) {
-    return model.toLowerCase().replace(/[\s_]+/g, "-") === "agnes-image-2.1-flash";
+// Agnes 图像档位模型（2.1 / 2.5）：支持 size 档位（1K-4K）+ ratio 白名单。
+function isAgnesImageTierModel(model: string) {
+    const m = model.toLowerCase().replace(/[\s_]+/g, "-");
+    return m === "agnes-image-2.1-flash" || m === "agnes-image-2.5-flash";
 }
 
-function normalizeAgnesImage21Ratio(value: string) {
+// 将任意尺寸/比例归一化到 Agnes ratio 白名单。
+// 优先匹配已命名的档位尺寸；否则用 gcd 求最简比例并映射到最近白名单项。
+function normalizeAgnesImageRatio(value: string) {
     const ratio = value.trim().toLowerCase();
-    if (["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"].includes(ratio)) {
-        return ratio;
-    }
-    if (ratio === "2048x2048") return "1:1";
-    if (ratio === "2048x1152" || ratio === "3840x2160") return "16:9";
-    if (ratio === "1152x2048" || ratio === "2160x3840") return "9:16";
-    if (ratio === "3136x1344" || ratio === "6272x2688") return "21:9";
-    return "1:1";
+    const whitelist = ["1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"];
+    if (whitelist.includes(ratio)) return ratio;
+
+    const match = ratio.match(/^(\d+)x(\d+)$/);
+    if (!match) return "1:1";
+    let width = Number(match[1]);
+    let height = Number(match[2]);
+    if (!width || !height) return "1:1";
+    const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+    const divisor = gcd(width, height);
+    width /= divisor;
+    height /= divisor;
+    const simple = `${width}:${height}`;
+    if (whitelist.includes(simple)) return simple;
+
+    // 未命中的比例（如 1536x1024=3:2 已命中，1920x1080=16:9 已命中）：按数值最近的白名单项映射。
+    const target = width / height;
+    const candidates: [string, number][] = whitelist.map((item) => {
+        const [w, h] = item.split(":").map(Number);
+        return [item, w / h];
+    });
+    return candidates.reduce((best, item) => (Math.abs(item[1] - target) < Math.abs(best[1] - target) ? item : best))[0];
 }
 
 function applyAgnesImageSize(
@@ -1396,7 +1414,9 @@ function applyAgnesImageSize(
     config: AiConfig,
     params: ImageRequestParams,
 ) {
-    if (!isAgnesImage21Model(config.model)) {
+    // 档位模型（2.1/2.5）：质量 → 1K/2K/3K/4K 档位 + ratio；
+    // 旧模型（2.0）：直接透传精确尺寸。
+    if (!isAgnesImageTierModel(config.model)) {
         if (params.size) body.size = params.size;
         return;
     }
@@ -1406,7 +1426,7 @@ function applyAgnesImageSize(
         medium: "3K",
         high: "4K",
     } as Record<string, string>)[params.quality] || "1K";
-    body.ratio = normalizeAgnesImage21Ratio(config.size);
+    body.ratio = normalizeAgnesImageRatio(config.size);
 }
 
 function publicHttpUrl(value?: string) {
