@@ -648,6 +648,8 @@ async function requestImageGenerationSingle(config: AiConfig & { seedIndex?: num
             prompt: withPromptGuard(config, withSystemPrompt(config, prompt)),
         };
         applyAgnesImageSize(body, config, params);
+        // 文档：文生图 Base64 用顶层 return_base64: true（顶层 response_format 会 400）
+        if (config.responseFormatB64Json) body.return_base64 = true;
 
         return requestAndParseImages(
             config,
@@ -1063,6 +1065,8 @@ async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: num
             prompt: withPromptGuard(config, withSystemPrompt(config, prompt)),
             extra_body: { image: imageUrls },
         };
+        // 文档：图生图输出格式在 extra_body.response_format（b64_json 或 url）
+        (body.extra_body as Record<string, unknown>).response_format = config.responseFormatB64Json ? "b64_json" : "url";
         applyAgnesImageSize(body, config, params);
         return {
             method: "POST",
@@ -1130,6 +1134,8 @@ async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: num
             prompt: withPromptGuard(config, withSystemPrompt(config, prompt)),
         };
         applyAgnesImageSize(body, config, params);
+        // 文档：文生图 Base64 用顶层 return_base64: true（顶层 response_format 会 400）
+        if (config.responseFormatB64Json) body.return_base64 = true;
         return {
             method: "POST",
             headers: jsonHeaders,
@@ -1463,6 +1469,8 @@ async function requestAgnesImageEdit(config: AiConfig & { seedIndex?: number; se
             image: imageUrls, // 👈 核心对齐：官方文档参考图参数 extra_body.image 数组
         },
     };
+    // 文档：图生图输出格式在 extra_body.response_format（b64_json 或 url），顶层 response_format 会 400
+    (body.extra_body as Record<string, unknown>).response_format = config.responseFormatB64Json ? "b64_json" : "url";
     applyAgnesImageSize(body, config, params);
 
     return requestAndParseImages(
