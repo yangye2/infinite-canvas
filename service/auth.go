@@ -285,6 +285,9 @@ func SaveUser(user model.User, password string) (model.User, error) {
 			user.LinuxDoID = saved.LinuxDoID
 		}
 		user.LastLoginAt = saved.LastLoginAt
+		if user.SyncOverride == "" {
+			user.SyncOverride = saved.SyncOverride
+		}
 	}
 	if password != "" {
 		hash, err := hashPassword(password)

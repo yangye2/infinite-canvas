@@ -44,7 +44,7 @@ const emptySettings: AdminSettings = {
         auth: { allowRegister: true, linuxDo: { enabled: false } },
         storage: { mode: "local_indexeddb", allowUserProvider: false },
     },
-    private: { channels: [], promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local_indexeddb", allowUserProvider: false, allowUserGlobalProvider: true, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
+    private: { channels: [], sync: { userData: true, workflows: true, assets: true }, promptSync: { enabled: true, cron: "0 0 * * *" }, aiLog: { localDirectReportEnabled: false, cleanup: { enabled: false, retentionDays: 14, cron: "0 3 * * *" } }, auth: { linuxDo: { clientId: "", clientSecret: "" } }, storage: { mode: "local_indexeddb", allowUserProvider: false, allowUserGlobalProvider: true, providers: [], roundRobinCursor: 0, capacityCheck: { enabled: false, cron: "0 */6 * * *" }, capacityLimitBytes: 9 * 1024 * 1024 * 1024 } },
 };
 const emptyChannel: AdminModelChannel = { id: "", protocol: "openai", name: "", baseUrl: modelChannelDefaultBaseUrls.openai, apiKey: "", models: [], weight: 1, timeout: 600, enabled: true, remark: "" };
 const emptyS3StorageProvider: AdminStorageProvider = { id: "", name: "", type: "s3", endpoint: "", region: "auto", bucket: "", accessKeyId: "", secretAccessKey: "", publicBaseUrl: "", pathPrefix: "canvas", username: "", password: "", weight: 1, enabled: true, ownerUserId: "", capacityBytes: 0, capacityCheckedAt: "", capacityExceeded: false };
@@ -520,6 +520,25 @@ export default function AdminSettingsPage() {
                                             </Col>
                                         </Row>
                                     </Flex>
+                                </Card>
+                                <Card size="small" title="用户数据云同步默认值" extra={<Typography.Text type="secondary">关闭后所有普通用户默认停用，可在用户管理里单独覆盖</Typography.Text>}>
+                                    <Row gutter={16}>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "sync", "userData"]} label="画布与生成历史" valuePropName="checked" extra="画布项目 + 图片/视频生成历史">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "sync", "workflows"]} label="创作工作流" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                        <Col xs={24} md={8}>
+                                            <Form.Item name={["private", "sync", "assets"]} label="素材库" valuePropName="checked">
+                                                <Switch />
+                                            </Form.Item>
+                                        </Col>
+                                    </Row>
                                 </Card>
                                 <Card size="small" title="提示词定时同步">
                                     <Row gutter={16} align="middle">
@@ -1029,6 +1048,11 @@ function normalizeModelCosts(items: Partial<AdminSettings["public"]["modelChanne
 function normalizePrivateSetting(setting: Partial<AdminSettings["private"]> = {}): AdminSettings["private"] {
     return {
         channels: (setting.channels || []).map(normalizeChannel),
+        sync: {
+            userData: setting.sync?.userData !== false,
+            workflows: setting.sync?.workflows !== false,
+            assets: setting.sync?.assets !== false,
+        },
         promptSync: {
             enabled: setting.promptSync?.enabled !== false,
             cron: setting.promptSync?.cron || "0 0 * * *",

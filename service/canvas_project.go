@@ -65,6 +65,9 @@ func CurrentUserCanvasProjects(
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
 	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
+	}
 
 	projects, err := repository.ListUserCanvasProjects(user.ID)
 	if err != nil {
@@ -80,6 +83,9 @@ func SaveCurrentUserCanvasProject(
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
 	}
 
 	project, err := canvasProjectFromRaw(user.ID, raw)
@@ -103,6 +109,9 @@ func SyncCurrentUserCanvasProjects(
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
 	}
 
 	projects := make([]model.CanvasProject, 0, len(rawProjects))
@@ -128,6 +137,9 @@ func DeleteCurrentUserCanvasProjects(
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return err
 	}
 
 	for _, projectID := range projectIDs {

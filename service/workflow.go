@@ -48,6 +48,9 @@ func ListCreativeWorkflows(ctx context.Context) ([]CreativeWorkflowPayload, erro
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
 	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityWorkflows); err != nil {
+		return nil, err
+	}
 	records, err := repository.ListCreativeWorkflows(user.ID)
 	if err != nil {
 		return nil, err
@@ -63,6 +66,9 @@ func SaveCreativeWorkflow(ctx context.Context, payload CreativeWorkflowPayload) 
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return CreativeWorkflowPayload{}, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityWorkflows); err != nil {
+		return CreativeWorkflowPayload{}, err
 	}
 	scope := strings.ToLower(strings.TrimSpace(payload.Scope))
 	if scope != "public" {
@@ -119,6 +125,9 @@ func DeleteCreativeWorkflow(ctx context.Context, id string) error {
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityWorkflows); err != nil {
+		return err
 	}
 	record, found, err := repository.GetCreativeWorkflow(id)
 	if err != nil {

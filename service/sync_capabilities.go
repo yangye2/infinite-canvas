@@ -94,3 +94,23 @@ func EnsureUserSyncAllowed(user model.AuthUser, capability string) error {
 	}
 	return nil
 }
+
+// NormalizeSyncOverride 校验并规范化后台提交的用户同步覆盖 JSON：
+// 仅接受 userData/workflows/assets 三个键，值只能是 null/true/false。
+func NormalizeSyncOverride(raw json.RawMessage) (string, error) {
+	var parsed map[string]*bool
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return "", err
+	}
+	normalized := map[string]*bool{}
+	for _, key := range []string{SyncCapabilityUserData, SyncCapabilityWorkflows, SyncCapabilityAssets} {
+		if value, ok := parsed[key]; ok {
+			normalized[key] = value
+		}
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}

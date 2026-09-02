@@ -24,6 +24,8 @@ export type AdminUser = {
     inviterId: string;
     linuxDoId: string;
     status: "active" | "ban";
+    // 同步覆盖（JSON 字符串）：{"userData":null|true|false,...}，null/缺失表示跟随系统默认。
+    syncOverride?: string | null;
     lastLoginAt: string;
     createdAt: string;
     updatedAt: string;
@@ -265,6 +267,11 @@ export type AdminStorageProvider = {
 
 export type AdminPrivateSettings = {
     channels: AdminModelChannel[];
+    sync: {
+        userData: boolean;
+        workflows: boolean;
+        assets: boolean;
+    };
     promptSync: {
         enabled: boolean;
         cron: string;

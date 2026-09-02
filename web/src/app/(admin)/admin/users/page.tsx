@@ -21,6 +21,45 @@ const statusOptions = [
     { label: "禁用", value: "ban" },
 ];
 
+const syncOverrideOptions = [
+    { label: "跟随系统默认", value: "default" },
+    { label: "强制开启", value: "on" },
+    { label: "强制关闭", value: "off" },
+];
+
+const syncItems = [
+    { key: "userData", label: "画布与生成历史" },
+    { key: "workflows", label: "创作工作流" },
+    { key: "assets", label: "素材库" },
+] as const;
+
+type SyncItemKey = (typeof syncItems)[number]["key"];
+
+// 解析后端的 syncOverride JSON 字符串为表单值；无法解析时视为全部跟随默认。
+function parseSyncOverrideToForm(raw?: string | null): Record<SyncItemKey, string> {
+    const result: Record<SyncItemKey, string> = { userData: "default", workflows: "default", assets: "default" };
+    try {
+        const parsed = raw ? (JSON.parse(raw) as Record<string, boolean | null>) : null;
+        if (parsed) {
+            for (const { key } of syncItems) {
+                const value = parsed[key];
+                result[key] = value === true ? "on" : value === false ? "off" : "default";
+            }
+        }
+    } catch {
+        // ignore
+    }
+    return result;
+}
+
+function buildSyncOverrideJson(values: Record<SyncItemKey, string>): string {
+    const payload: Record<SyncItemKey, boolean | null> = { userData: null, workflows: null, assets: null };
+    for (const { key } of syncItems) {
+        payload[key] = values[key] === "on" ? true : values[key] === "off" ? false : null;
+    }
+    return JSON.stringify(payload);
+}
+
 export default function AdminUsersPage() {
     const { users, keyword, page, pageSize, total, isLoading, searchUsers, changePage, changePageSize, resetFilters, refreshUsers, saveUser: saveAdminUser, adjustCredits, deleteUser } = useAdminUsers();
     const [form] = Form.useForm<UserFormValues>();
@@ -31,13 +70,16 @@ export default function AdminUsersPage() {
     useEffect(() => setKeywordText(keyword), [keyword]);
 
     useEffect(() => {
-        if (editingUser) form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "" });
+        if (editingUser) {
+            form.setFieldsValue({ role: "user", status: "active", ...editingUser, password: "", ...parseSyncOverrideToForm(editingUser.syncOverride) });
+        }
     }, [editingUser, form]);
 
     const saveUser = async () => {
         const value = await form.validateFields();
-        const userValue = { ...value };
+        const userValue = { ...value } as UserFormValues & Record<SyncItemKey, string>;
         delete userValue.credits;
+        userValue.syncOverride = buildSyncOverrideJson(value as unknown as Record<SyncItemKey, string>);
         await saveAdminUser({ ...editingUser, ...userValue, password: value.password || undefined });
         setEditingUser(null);
     };
@@ -218,6 +260,20 @@ export default function AdminUsersPage() {
                                 <Select options={statusOptions} />
                             </Form.Item>
                         </Col>
+                    </Row>
+                    <Divider style={{ margin: "4px 0 16px" }} />
+                    <Typography.Text strong>数据同步覆盖</Typography.Text>
+                    <Typography.Paragraph type="secondary" style={{ marginBottom: 12, fontSize: 12 }}>
+                        不设置时跟随系统设置里的默认值；管理员账号不受限制。
+                    </Typography.Paragraph>
+                    <Row gutter={14}>
+                        {syncItems.map((item) => (
+                            <Col span={8} key={item.key}>
+                                <Form.Item name={item.key} label={item.label}>
+                                    <Select options={syncOverrideOptions} />
+                                </Form.Item>
+                            </Col>
+                        ))}
                     </Row>
                     {editingUser?.id ? (
                         <>

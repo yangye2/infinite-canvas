@@ -140,11 +140,7 @@ func CurrentUserConfig(ctx context.Context) (UserConfigPayload, error) {
 		return UserConfigPayload{}, err
 	}
 	result := UserConfigPayload{
-		SyncCapabilities: map[string]bool{
-			"userData":  true,
-			"workflows": true,
-			"assets":    true,
-		},
+		SyncCapabilities: UserSyncCapabilities(user),
 	}
 	if !ok {
 		return result, nil
@@ -209,6 +205,13 @@ func SaveCurrentUserModelConfig(ctx context.Context, raw json.RawMessage) (UserC
 }
 
 func CurrentUserImageHistory(ctx context.Context) (json.RawMessage, error) {
+	user, ok := UserFromContext(ctx)
+	if !ok || user.ID == "" {
+		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
+	}
 	config, err := currentUserConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -220,6 +223,13 @@ func CurrentUserImageHistory(ctx context.Context) (json.RawMessage, error) {
 }
 
 func SaveCurrentUserImageHistory(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	user, ok := UserFromContext(ctx)
+	if !ok || user.ID == "" {
+		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
+	}
 	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
 		config.ImageHistory = string(raw)
 	})
@@ -230,6 +240,13 @@ func SaveCurrentUserImageHistory(ctx context.Context, raw json.RawMessage) (json
 }
 
 func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
+	user, ok := UserFromContext(ctx)
+	if !ok || user.ID == "" {
+		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityAssets); err != nil {
+		return nil, err
+	}
 	config, err := currentUserConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -241,6 +258,13 @@ func CurrentUserAssetData(ctx context.Context) (json.RawMessage, error) {
 }
 
 func SaveCurrentUserAssetData(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	user, ok := UserFromContext(ctx)
+	if !ok || user.ID == "" {
+		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityAssets); err != nil {
+		return nil, err
+	}
 	config, err := saveCurrentUserConfigField(ctx, func(config *model.UserConfig) {
 		config.AssetData = string(raw)
 	})

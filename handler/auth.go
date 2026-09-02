@@ -21,13 +21,14 @@ type registerRequest struct {
 }
 
 type saveUserRequest struct {
-	ID          string           `json:"id"`
-	Username    string           `json:"username"`
-	Password    string           `json:"password"`
-	Email       string           `json:"email"`
-	DisplayName string           `json:"displayName"`
-	Role        model.UserRole   `json:"role"`
-	Status      model.UserStatus `json:"status"`
+	ID           string          `json:"id"`
+	Username     string          `json:"username"`
+	Password     string          `json:"password"`
+	Email        string          `json:"email"`
+	DisplayName  string          `json:"displayName"`
+	Role         model.UserRole  `json:"role"`
+	Status       model.UserStatus `json:"status"`
+	SyncOverride json.RawMessage `json:"syncOverride"`
 }
 
 type adjustUserCreditsRequest struct {
@@ -109,13 +110,23 @@ func AdminUsers(w http.ResponseWriter, r *http.Request) {
 func AdminSaveUser(w http.ResponseWriter, r *http.Request) {
 	var request saveUserRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
+	syncOverride := ""
+	if len(request.SyncOverride) > 0 {
+		normalized, err := service.NormalizeSyncOverride(request.SyncOverride)
+		if err != nil {
+			Fail(w, "同步覆盖配置无效")
+			return
+		}
+		syncOverride = normalized
+	}
 	user, err := service.SaveUser(model.User{
-		ID:          request.ID,
-		Username:    request.Username,
-		Email:       request.Email,
-		DisplayName: request.DisplayName,
-		Role:        request.Role,
-		Status:      request.Status,
+		ID:           request.ID,
+		Username:     request.Username,
+		Email:        request.Email,
+		DisplayName:  request.DisplayName,
+		Role:         request.Role,
+		Status:       request.Status,
+		SyncOverride: syncOverride,
 	}, request.Password)
 	if err != nil {
 		FailError(w, err)
