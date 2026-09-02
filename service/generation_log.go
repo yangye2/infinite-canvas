@@ -20,6 +20,9 @@ func CurrentUserVideoGenerationLogs(ctx context.Context) ([]json.RawMessage, err
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
 	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
+	}
 	cleanupGenerationLogs()
 	logs, err := repository.ListVideoGenerationLogs(user.ID, generationLogLimit)
 	if err != nil {
@@ -32,6 +35,9 @@ func SaveCurrentUserVideoGenerationLogs(ctx context.Context, raws []json.RawMess
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
 	}
 	cleanupGenerationLogs()
 	logs := make([]model.VideoGenerationLog, 0, len(raws))

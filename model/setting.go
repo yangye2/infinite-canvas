@@ -97,6 +97,17 @@ type PrivateSetting struct {
 	AILog      AILogSetting          `json:"aiLog"`
 	Auth       PrivateAuthSetting    `json:"auth"`
 	Storage    PrivateStorageSetting `json:"storage"`
+	Sync       UserSyncSetting       `json:"sync"`
+}
+
+// UserSyncSetting 用户数据云同步的系统默认开关（nil 表示开启）。
+type UserSyncSetting struct {
+	// UserData 画布项目与生成历史同步。
+	UserData *bool `json:"userData"`
+	// Workflows 创作工作流同步。
+	Workflows *bool `json:"workflows"`
+	// Assets 素材库同步。
+	Assets *bool `json:"assets"`
 }
 
 type AILogSetting struct {

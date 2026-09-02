@@ -32,7 +32,9 @@ type User struct {
 	LinuxDoID   string     `json:"linuxDoId" gorm:"index"`
 	WechatID    string     `json:"wechatId"`
 	Status      UserStatus `json:"status"`
-	LastLoginAt string     `json:"lastLoginAt"`
+	// SyncOverride 用户级同步覆盖：{"userData":null|true|false,...}，null/缺失表示跟随系统默认。
+	SyncOverride string     `json:"syncOverride,omitempty" gorm:"type:text"`
+	LastLoginAt  string     `json:"lastLoginAt"`
 	Extra       string     `json:"extra" gorm:"type:text"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
