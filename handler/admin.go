@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/service"
+	"github.com/tigerowo/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/service"
 )
 
 type adminSyncRequest struct {
@@ -18,6 +18,11 @@ type adminBatchDeleteRequest struct {
 }
 
 func AdminPromptCategories(w http.ResponseWriter, r *http.Request) {
+	OK(w, service.ListPromptCategories())
+}
+
+func AdminSyncAllPromptCategories(w http.ResponseWriter, r *http.Request) {
+	service.SyncRemotePromptCategories()
 	OK(w, service.ListPromptCategories())
 }
 

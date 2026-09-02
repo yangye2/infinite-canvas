@@ -1,6 +1,10 @@
 services:
   app:
-    image: ghcr.io/yangye2/infinite-canvas:latest
+    image: ghcr.io/tigerowo/infinite-canvas:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: always
     container_name: infinite-canvas
     env_file:
       - .env

@@ -3,7 +3,7 @@ package repository
 import (
 	"errors"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/model"
 	"gorm.io/gorm"
 )
 

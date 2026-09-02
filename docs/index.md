@@ -2,43 +2,39 @@
 
 ## 项目介绍
 
-- [快速开始](/docs/overview/quick-start)
-- [功能介绍](/docs/overview/features)
-- [Render 部署](/docs/overview/render)
-- [Docker 部署](/docs/overview/docker)
-- [第三方 GitHub 提示词仓库](/docs/overview/third-party-prompt-repositories)
+- [快速开始](overview/quick-start.md)
+- [功能介绍](overview/features.md)
+- [Docker 部署](overview/docker.md)
+- [第三方 GitHub 提示词仓库](overview/third-party-prompt-repositories.md)
 
 ## 操作手册
 
-- [画布节点操作手册](/docs/canvas/canvas-node-manual)
-- [画布快捷键](/docs/canvas/canvas-shortcuts)
+- [画布节点操作手册](canvas/canvas-node-manual.md)
+- [画布快捷键](canvas/canvas-shortcuts.md)
 
 ## 开发文档
 
-- [本地开发](/docs/backend/local-development)
-- [接口响应约定](/docs/backend/api-response)
-- [系统配置数据结构](/docs/backend/system-settings)
-- [后端数据库说明](/docs/backend/backend-database)
-- [画布数据结构](/docs/backend/canvas-data-structure)
+- [本地开发](backend/local-development.md)
+- [接口响应约定](backend/api-response.md)
+- [系统配置数据结构](backend/system-settings.md)
+- [后端数据库说明](backend/backend-database.md)
+- [画布数据结构](backend/canvas-data-structure.md)
 
 ## 商务合作
 
-- [开源协议](/docs/business/license)
-- [商务合作](/docs/business/business)
+- [开源协议](business/license.md)
+- [商务合作](business/business.md)
 
 ## 赞助支持
 
-- [文档](/docs/support/docs)
-- [打赏支持](/docs/support/donate)
-- [广告赞助](/docs/support/sponsor)
+- [打赏支持](support/donate.md)
 
 ## 项目进度
 
-- [更新日志](/docs/progress/changelog)
-- [待测试](/docs/progress/pending-test)
-- [TODO](/docs/progress/todo)
+- [待测试](progress/pending-test.md)
+- [TODO](progress/todo.md)
 
 ## 说明
 
-- 当前画布项目和“我的素材”主要保存在浏览器本地，不支持云同步。
+- 未登录时画布项目和“我的素材”保存在浏览器本地；登录且账号同步可用时，会同步保存到账号/云端。
 - 本地直连模式下，AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。

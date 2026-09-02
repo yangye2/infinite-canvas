@@ -1,32 +1,73 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import { App } from "antd";
-import { useTranslation } from "react-i18next";
 
-import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
+import { fetchUserConfig } from "@/services/api/user-config";
+import { defaultUserStorageProvider, defaultUserWebDAVStorageProvider, saveUserStorageProvider, saveUserWebDAVStorageProvider } from "@/services/image-storage";
+import { useConfigStore, type AiConfig } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { usePromptSourceScheduler } from "@/hooks/use-prompt-source-scheduler";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     const { message } = App.useApp();
-    const { t } = useTranslation();
     const handledConfigParams = useRef(false);
+    const pathname = usePathname();
+    const token = useUserStore((state) => state.token);
+    const user = useUserStore((state) => state.user);
     const hydrateUser = useUserStore((state) => state.hydrateUser);
     const loadPublicSettings = useConfigStore((state) => state.loadPublicSettings);
     const publicSettings = useConfigStore((state) => state.publicSettings);
+    const channelMode = useConfigStore((state) => state.config.channelMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
-    const config = useConfigStore((state) => state.config);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
-
-    usePromptSourceScheduler();
+    const isLoginPage = pathname === "/login" || pathname === "/admin/login";
+    const adminRemoteTokenRef = useRef("");
 
     useEffect(() => {
         void loadPublicSettings();
     }, [loadPublicSettings]);
 
     useEffect(() => {
-        void hydrateUser();
-    }, [hydrateUser]);
+        if (!isLoginPage) void hydrateUser();
+    }, [hydrateUser, isLoginPage]);
+
+    useEffect(() => {
+        if (!token || user?.role !== "admin" || adminRemoteTokenRef.current === token) return;
+        adminRemoteTokenRef.current = token;
+        if (channelMode !== "remote") updateConfig("channelMode", "remote");
+    }, [channelMode, token, updateConfig, user?.role]);
+
+    useEffect(() => {
+        if (!token || !user?.id) return;
+        void fetchUserConfig(token)
+            .then((payload) => {
+                const syncS3 = payload.modelConfig?.syncStorageConfig === true;
+                const syncWebDAV = payload.modelConfig?.syncWebDAVStorageConfig === true;
+                if (payload.modelConfig) {
+                    Object.entries(payload.modelConfig)
+                        .forEach(([key, value]) => updateConfig(key as keyof AiConfig, value as never));
+                }
+                updateConfig("syncStorageConfig", syncS3);
+                updateConfig("syncWebDAVStorageConfig", syncWebDAV);
+                if (syncS3 && payload.storageProvider?.s3) {
+                    saveUserStorageProvider({
+                        ...defaultUserStorageProvider(),
+                        ...payload.storageProvider.s3,
+                        type: "s3",
+                    });
+                }
+                if (syncWebDAV && payload.storageProvider?.webdav) {
+                    saveUserWebDAVStorageProvider({
+                        ...defaultUserWebDAVStorageProvider(),
+                        ...payload.storageProvider.webdav,
+                        type: "webdav",
+                    });
+                }
+            })
+            .catch(() => {});
+    }, [token, updateConfig, user?.id]);
 
     useEffect(() => {
         if (handledConfigParams.current) return;
@@ -41,32 +82,16 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
         searchParams.delete("apiKey");
         searchParams.delete("apikey");
         window.history.replaceState(null, "", `${window.location.pathname}${searchParams.size ? `?${searchParams}` : ""}${window.location.hash}`);
-        if (publicSettings.modelChannel && publicSettings.modelChannel.allowCustomChannel === false) {
+        if (!publicSettings.modelChannel.allowCustomChannel) {
             openConfigDialog(false);
-            message.error(t("config.customChannelDisabled"));
+            message.error("后台未允许用户自定义渠道，请联系管理员进行配置");
             return;
         }
         updateConfig("channelMode", "local");
-        const firstChannel = config.channels[0];
-        updateConfig(
-            "channels",
-            firstChannel
-                ? config.channels.map((channel, index) =>
-                      index === 0
-                          ? {
-                                ...channel,
-                                ...(baseUrl ? { baseUrl } : {}),
-                                ...(apiKey ? { apiKey } : {}),
-                            }
-                          : channel,
-                  )
-                : [createModelChannel({ id: "default", name: t("config.channels.defaultName"), baseUrl: baseUrl || undefined, apiKey: apiKey || "" })],
-        );
         if (baseUrl) updateConfig("baseUrl", baseUrl);
         if (apiKey) updateConfig("apiKey", apiKey);
         openConfigDialog(false);
-        message.success(t("config.importedDirectConfig"));
-    }, [config.channels, message, openConfigDialog, publicSettings, t, updateConfig]);
+    }, [message, openConfigDialog, publicSettings, updateConfig]);
 
     return <>{children}</>;
 }

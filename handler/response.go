@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/basketikun/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/model"
 )
 
 type response struct {
@@ -21,6 +21,16 @@ func OK(w http.ResponseWriter, data any) {
 
 func Fail(w http.ResponseWriter, msg string) {
 	writeJSON(w, response{Code: 1, Data: nil, Msg: msg})
+}
+
+func FailWithStatus(w http.ResponseWriter, status int, msg string) {
+	writeJSONWithStatus(w, status, response{Code: 1, Data: nil, Msg: msg})
+}
+
+func writeJSONWithStatus(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func FailError(w http.ResponseWriter, err error) {

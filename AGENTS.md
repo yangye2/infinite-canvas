@@ -11,6 +11,7 @@
 - 项目尚未上线，不需要兼容旧数据；表结构或字段调整时直接按新设计修改，不写旧字段兼容、数据迁移兜底或删除旧表的清理逻辑，除非用户明确要求。
 - 每次写完代码，不需要检查语法，不需要执行构建，用户会自己做。
 - 不要改无关文件，不要顺手重构。
+- 任何文件编辑、改动、删除或格式化前，必须先询问用户是否允许；只有得到明确同意后才能修改。
 - 如果工作区已有用户改动，不要回滚，不要覆盖；只在必要范围内追加修改。
 
 ## 反复提醒沉淀
@@ -28,7 +29,7 @@
 - `model/` 只定义数据结构、枚举和简单模型方法。
 - 列表接口优先沿用 `model.Query`、`Normalize`、分页和标签筛选方式。
 - 业务接口保持 `{ code, data, msg }` 的响应结构。
-- 新增数据表时同步更新 `docs/backend-database.md`。
+- 新增数据表时同步更新 `docs/backend/backend-database.md`。
 
 ## 前端规范
 
@@ -67,15 +68,15 @@
 ## 文档规范
 
 - README 保持简洁，只放项目介绍、核心功能、快速开始和文档入口。
-- `docs/index.md` 放给 AI 使用的文档索引，不要再放到 `docs/content/docs/` 内容目录里。
-- 详细功能介绍写到 `docs/content/docs/overview/features.mdx`。
-- 后续待办写到 `docs/content/docs/progress/todo.mdx`。
-- 已实现但还需要用户测试确认的事项写到 `docs/content/docs/progress/pending-test.mdx`。
-- `docs/content/docs/progress/pending-test.mdx` 用来记录这个版本实际做了哪些可测试变更；`CHANGELOG.md` 的 `Unreleased` 只保留对这些变更的版本级归纳，避免逐条照搬实现细节。
-- 每次 todo 事项完成后，先从 `docs/content/docs/progress/todo.mdx` 移到 `docs/content/docs/progress/pending-test.mdx`，不要直接写进正式功能说明；用户确认测试通过后再更新 `docs/content/docs/overview/features.mdx`。
-- 每次任务完成前，都要根据实际变更检查并更新 `docs/content/docs/progress/todo.mdx` 和 `docs/content/docs/progress/pending-test.mdx`；如果功能或待办没有变化，也要确认无需修改。
-- 接口响应规则写到 `docs/content/docs/backend/api-response.mdx`。
-- 数据库结构写到 `docs/content/docs/backend/backend-database.mdx`。
+- `docs/index.md` 放给 AI 使用的文档索引，不要再放到 `docs/` 内容目录里。
+- 详细功能介绍写到 `docs/overview/features.md`。
+- 后续待办写到 `docs/progress/todo.md`。
+- 已实现但还需要用户测试确认的事项写到 `docs/progress/pending-test.md`。
+- `docs/progress/pending-test.md` 用来记录这个版本实际做了哪些可测试变更；`CHANGELOG.md` 的 `Unreleased` 只保留对这些变更的版本级归纳，避免逐条照搬实现细节。
+- 每次 todo 事项完成后，先从 `docs/progress/todo.md` 移到 `docs/progress/pending-test.md`，不要直接写进正式功能说明；用户确认测试通过后再更新 `docs/overview/features.md`。
+- 每次任务完成前，都要根据实际变更检查并更新 `docs/progress/todo.md` 和 `docs/progress/pending-test.md`；如果功能或待办没有变化，也要确认无需修改。
+- 接口响应规则写到 `docs/backend/api-response.md`。
+- 数据库结构写到 `docs/backend/backend-database.md`。
 - 文档不要写过期日期；除非用户明确要求记录具体时间。
 
 ## 发版本流程
@@ -88,6 +89,6 @@
 
 ## 项目注意事项
 
-- 当前画布项目和“我的素材”主要保存在浏览器本地，不要在文档中误写成已支持云同步。
+- 未登录时画布项目和“我的素材”保存在浏览器本地；登录且账号同步可用时会同步保存到账号/云端，文档中不要忽略未登录本地保存场景。
 - 当前 AI API Key 存在浏览器本地，并由前端直接请求 OpenAI 兼容接口；涉及安全说明时要写清楚。
 - Docker 静态资源路径目前仍是待办项，文档中不要过度承诺生产部署已经完全验证。

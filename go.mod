@@ -1,4 +1,4 @@
-module github.com/basketikun/infinite-canvas
+module github.com/tigerowo/infinite-canvas
 
 go 1.25.0
 
@@ -11,6 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/studio-b12/gowebdav v0.13.0
 	golang.org/x/crypto v0.48.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.0

@@ -1,5 +1,6 @@
 import { apiDelete, apiGet, apiPost, compactApiParams } from "@/services/api/request";
 import type { Prompt, PromptListResponse } from "@/services/api/prompts";
+import type { AgentSkill, AgentSkillFile } from "@/services/api/agent-skills";
 
 export type AdminPromptCategory = {
     category: string;
@@ -36,6 +37,7 @@ export type AdminUserListResponse = {
 export type AdminCreditLog = {
     id: string;
     userId: string;
+    userDisplayName: string;
     type: string;
     amount: number;
     balance: number;
@@ -92,6 +94,10 @@ export async function syncAdminPromptCategory(token: string, category: string) {
     return apiPost<AdminPromptCategory[]>("/api/admin/prompt-categories/sync", { category }, token);
 }
 
+export async function syncAdminPromptCategoriesAll(token: string) {
+    return apiPost<AdminPromptCategory[]>("/api/admin/prompt-categories/sync-all", {}, token);
+}
+
 export type AdminPromptQuery = {
     keyword?: string;
     category?: string;
@@ -103,7 +109,7 @@ export type AdminPromptQuery = {
 export type AdminAsset = {
     id: string;
     title: string;
-    type: "text" | "image" | "video";
+    type: "text" | "image" | "video" | "audio";
     coverUrl: string;
     tags: string[];
     category: string;
@@ -136,6 +142,22 @@ export async function deleteAdminPrompts(token: string, ids: string[]) {
     return apiPost<boolean>("/api/admin/prompts/batch-delete", { ids }, token);
 }
 
+export function fetchAdminAgentSkills(token: string) {
+    return apiGet<AgentSkill[]>("/api/admin/agent-skills", undefined, token);
+}
+
+export function saveAdminAgentSkill(token: string, skill: Partial<AgentSkill>) {
+    return apiPost<AgentSkill>("/api/admin/agent-skills", skill, token);
+}
+
+export function fetchAdminAgentSkillFiles(token: string, id: string) {
+    return apiGet<AgentSkillFile[]>(`/api/admin/agent-skills/${encodeURIComponent(id)}/files`, undefined, token);
+}
+
+export function deleteAdminAgentSkill(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/agent-skills/${encodeURIComponent(id)}`, token);
+}
+
 export type AdminAssetQuery = {
     keyword?: string;
     type?: string;
@@ -157,12 +179,14 @@ export async function deleteAdminAsset(token: string, id: string) {
 }
 
 export type AdminModelChannel = {
-    protocol: "openai" | "agnes";
+    id: string;
+    protocol: "openai" | "gemini" | "grok2api" | "metaso" | "apimart" | "kie" | "mimo";
     name: string;
     baseUrl: string;
     apiKey: string;
     models: string[];
     weight: number;
+    timeout: number;
     enabled: boolean;
     remark: string;
 };
@@ -170,17 +194,38 @@ export type AdminModelChannel = {
 export type AdminPublicModelChannelSettings = {
     availableModels: string[];
     modelCosts: AdminModelCost[];
+    channels: AdminPublicModelChannelInfo[];
     defaultModel: string;
     defaultImageModel: string;
     defaultVideoModel: string;
     defaultTextModel: string;
     systemPrompt: string;
+    systemPrompts: {
+        image: string;
+        video: string;
+        text: string;
+        workflow: string;
+        workflowAgent: string;
+    };
     allowCustomChannel: boolean;
+    allowUserRemoteChannel: boolean;
 };
 
 export type AdminModelCost = {
     model: string;
     credits: number;
+};
+
+export type AdminPublicModelChannelInfo = {
+    id: string;
+    protocol: AdminModelChannel["protocol"];
+    name: string;
+    baseUrl: string;
+    models: string[];
+    weight: number;
+    timeout: number;
+    enabled: boolean;
+    remark: string;
 };
 
 export type AdminPublicSettings = {
@@ -191,6 +236,31 @@ export type AdminPublicSettings = {
             enabled: boolean;
         };
     };
+    storage: {
+        mode: string;
+        allowUserProvider: boolean;
+    };
+};
+
+export type AdminStorageProvider = {
+    id: string;
+    name: string;
+    type: "s3" | "webdav";
+    endpoint: string;
+    region: string;
+    bucket: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    publicBaseUrl: string;
+    pathPrefix: string;
+    username: string;
+    password: string;
+    weight: number;
+    enabled: boolean;
+    ownerUserId: string;
+    capacityBytes: number;
+    capacityCheckedAt: string;
+    capacityExceeded: boolean;
 };
 
 export type AdminPrivateSettings = {
@@ -199,13 +269,64 @@ export type AdminPrivateSettings = {
         enabled: boolean;
         cron: string;
     };
+    aiLog: {
+        localDirectReportEnabled: boolean;
+        cleanup: {
+            enabled: boolean;
+            retentionDays: number;
+            cron: string;
+        };
+    };
     auth: {
         linuxDo: {
             clientId: string;
             clientSecret: string;
         };
     };
+    storage: {
+        mode: string;
+        allowUserProvider: boolean;
+        allowUserGlobalProvider: boolean;
+        providers: AdminStorageProvider[];
+        roundRobinCursor: number;
+        capacityCheck: {
+            enabled: boolean;
+            cron: string;
+        };
+        capacityLimitBytes: number;
+    };
 };
+
+export type AdminAICallLog = {
+    id: string;
+    userId: string;
+    userDisplayName: string;
+    endpoint: string;
+    method: string;
+    model: string;
+    channelId: string;
+    channelName: string;
+    status: number;
+    durationMs: number;
+    credits: number;
+    requestBody: string;
+    responseBody: string;
+    error: string;
+    createdAt: string;
+};
+
+export type AdminAICallLogListResponse = {
+    items: AdminAICallLog[];
+    total: number;
+};
+
+export async function fetchAdminAICallLogs(token: string, query: AdminUserQuery = {}) {
+    return apiGet<AdminAICallLogListResponse>("/api/admin/ai-logs", compactApiParams(query), token);
+}
+
+export async function deleteAdminAICallLogs(token: string, olderThanDays = 7) {
+    return apiDelete<{ removedFiles: number }>(`/api/admin/ai-logs?olderThanDays=${encodeURIComponent(String(olderThanDays))}`, token);
+}
 
 export type AdminSettings = {
     public: AdminPublicSettings;
@@ -232,4 +353,16 @@ export async function fetchChannelModels(token: string, payload: AdminChannelAct
 
 export async function testChannelModel(token: string, payload: AdminChannelActionRequest) {
     return apiPost<string>("/api/admin/settings/channel-test", payload, token);
+}
+
+export type StorageCapacityResult = {
+    bytes: number;
+    limitBytes: number;
+    overLimit: boolean;
+    checkedAt: string;
+    providerName: string;
+};
+
+export async function measureAdminStorageProvider(token: string, payload: { index: number; provider: AdminStorageProvider }) {
+    return apiPost<StorageCapacityResult>("/api/admin/storage/measure", payload, token);
 }

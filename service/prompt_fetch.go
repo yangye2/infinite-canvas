@@ -10,16 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/tigerowo/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/repository"
 )
 
 const (
-	gptImage2RawBase             = "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-API-and-Prompts/main"
+	gptImage2RawBase             = "https://raw.githubusercontent.com/tigerowo/awesome-gpt-image-2-prompts/main"
 	awesomeGptImageRawBase       = "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main"
 	awesomeGpt4oImagePromptsBase = "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main"
 	youMindGptImage2RawBase      = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main"
 	youMindNanoBananaProRawBase  = "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main"
+	xianyuAwesomeGptImage2RawBase = "https://raw.githubusercontent.com/xianyu110/awesome-gptimage2/main"
 	davidWuGptImage2RawBase      = "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main"
 )
 
@@ -35,6 +36,24 @@ type gptImage2Data struct {
 	} `json:"records"`
 }
 
+type xianyuLatestPromptData struct {
+	Dates []struct {
+		Items []xianyuLatestPrompt `json:"items"`
+	} `json:"dates"`
+	Items []xianyuLatestPrompt `json:"items"`
+}
+
+type xianyuLatestPrompt struct {
+	XURL            string   `json:"x_url"`
+	URL             string   `json:"url"`
+	Author          string   `json:"author"`
+	CreatedAt       string   `json:"created_at"`
+	Text            string   `json:"text"`
+	Prompt          string   `json:"prompt"`
+	Reason          string   `json:"reason"`
+	ImageURLs       []string `json:"image_urls"`
+	PrimaryImageURL string   `json:"primary_image_url"`
+}
 type davidWuGptImage2Prompt struct {
 	ID         int    `json:"id"`
 	TitleEN    string `json:"title_en"`
@@ -74,6 +93,8 @@ func buildPromptCategory(category string) ([]model.Prompt, error) {
 		return buildAwesomeGptImagePrompts()
 	case "awesome-gpt4o-image-prompts":
 		return buildAwesomeGpt4oImagePrompts()
+	case "xianyu-awesome-gptimage2":
+		return buildXianyuAwesomeGptImage2Prompts()
 	case "youmind-gpt-image-2":
 		return buildYouMindGptImage2Prompts()
 	case "youmind-nano-banana-pro":
@@ -99,8 +120,13 @@ func fetchText(baseURL, file string) (string, error) {
 	return string(data), err
 }
 
+type gptImage2Case struct {
+	prompt string
+	image  string
+}
+
 func buildGptImage2Prompts() ([]model.Prompt, error) {
-	cases := map[string]string{}
+	cases := map[string]gptImage2Case{}
 	raw, err := fetchText(gptImage2RawBase, "data/ingested_tweets.json")
 	if err != nil {
 		return nil, err
@@ -118,25 +144,44 @@ func buildGptImage2Prompts() ([]model.Prompt, error) {
 	}
 	items := []model.Prompt{}
 	for _, item := range data.Records {
-		prompt := cases[item.TweetURL]
-		if prompt == "" {
+		c := cases[item.TweetURL]
+		if c.prompt == "" {
+			c = cases[item.ImageDir]
+		}
+		if c.prompt == "" {
 			continue
 		}
-		image := gptImage2RawBase + "/" + item.ImageDir + "/output.jpg"
-		items = append(items, model.Prompt{ID: "gpt-image-2-prompts-" + leftPad(len(items)+1), Title: item.Title, CoverURL: image, Prompt: prompt, Tags: tagsFromCategory(item.Category), CreatedAt: item.AddedAt, UpdatedAt: item.AddedAt, Preview: markdownPreview([]string{image})})
+		image := c.image
+		date := normalizePromptTime(item.AddedAt)
+		items = append(items, model.Prompt{ID: "gpt-image-2-prompts-" + leftPad(len(items)+1), Title: item.Title, CoverURL: image, Prompt: c.prompt, Tags: tagsFromCategory(item.Category), CreatedAt: date, UpdatedAt: date, Preview: markdownPreview([]string{image})})
 	}
 	return items, nil
 }
 
-func collectGptImage2Cases(cases map[string]string, markdown string) {
+func collectGptImage2Cases(cases map[string]gptImage2Case, markdown string) {
 	re := regexp.MustCompile("(?s)### Case \\d+: \\[[^\\]]+\\]\\(([^)]+)\\).*?\\*\\*Prompt:\\*\\*\\s*\\r?\\n\\s*```[\\w-]*\\r?\\n(.*?)\\r?\\n```")
+	reImageDir := regexp.MustCompile(`images/\w+_case\d+`)
+	reImage := regexp.MustCompile(`<img[^>]+src="([^"]+)"|!\[[^\]]*\]\(([^)]+)\)`)
 	for _, match := range re.FindAllStringSubmatch(markdown, -1) {
-		cases[match[1]] = strings.TrimSpace(match[2])
+		prompt := strings.TrimSpace(match[2])
+		image := ""
+		if imgMatch := reImage.FindStringSubmatch(match[0]); imgMatch != nil {
+			if imgMatch[1] != "" {
+				image = absoluteImage(gptImage2RawBase, imgMatch[1])
+			} else {
+				image = absoluteImage(gptImage2RawBase, imgMatch[2])
+			}
+		}
+		item := gptImage2Case{prompt: prompt, image: image}
+		cases[match[1]] = item
+		if dir := reImageDir.FindString(match[0]); dir != "" {
+			cases[dir] = item
+		}
 	}
 }
 
 func buildAwesomeGptImagePrompts() ([]model.Prompt, error) {
-	markdown, err := fetchText(awesomeGptImageRawBase, "README.zh-CN.md")
+	markdown, err := fetchText(awesomeGptImageRawBase, "README.md")
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +190,7 @@ func buildAwesomeGptImagePrompts() ([]model.Prompt, error) {
 		tags := tagsFromHeading(firstMatch(section, `(?m)^##\s+(.+)$`))
 		for _, block := range splitBeforeHeading(section, "### ") {
 			title := strings.TrimSpace(regexp.MustCompile(`\[([^\]]+)]\([^)]+\)`).ReplaceAllString(firstMatch(block, `(?m)^###\s+(.+)$`), "$1"))
-			prompt := strings.TrimSpace(firstMatch(block, "(?s)\\*\\*提示词:\\*\\*\\s*\\r?\\n\\s*```[\\w-]*\\r?\\n(.*?)\\r?\\n```"))
+			prompt := strings.TrimSpace(firstMatch(block, "(?s)\\*\\*Prompt:\\*\\*\\s*\\r?\\n\\s*```[\\w-]*\\r?\\n(.*?)\\r?\\n```"))
 			if title == "" || prompt == "" {
 				continue
 			}
@@ -180,6 +225,240 @@ func buildAwesomeGpt4oImagePrompts() ([]model.Prompt, error) {
 		items = append(items, model.Prompt{ID: "awesome-gpt4o-image-prompts-" + leftPad(len(items)+1), Title: title, CoverURL: cover, Prompt: prompt, Tags: []string{"gpt4o"}, Preview: markdownPreview(images)})
 	}
 	return items, nil
+}
+
+func buildXianyuAwesomeGptImage2Prompts() ([]model.Prompt, error) {
+	markdown, err := fetchText(xianyuAwesomeGptImage2RawBase, "README.md")
+	if err != nil {
+		return nil, err
+	}
+	items := parseXianyuPromptCollection(markdown)
+	latest, err := buildXianyuLatestXPrompts(len(items))
+	if err != nil {
+		return nil, err
+	}
+	items = append(items, latest...)
+	return items, nil
+}
+
+func parseXianyuPromptCollection(markdown string) []model.Prompt {
+	section := markdownSection(markdown, "## 提示词合集", "## 高级技巧")
+	items := []model.Prompt{}
+	currentCategory := ""
+	currentTitle := ""
+	currentLines := []string{}
+	finish := func() {
+		if currentTitle == "" || currentCategory == "补充案例提示词" {
+			return
+		}
+		block := strings.Join(currentLines, "\n")
+		prompt := xianyuCodeBlockText(block)
+		if prompt == "" {
+			prompt = xianyuFallbackPromptText(block)
+		}
+		if prompt == "" {
+			return
+		}
+		images := extractMarkdownImages(xianyuAwesomeGptImage2RawBase, block)
+		cover := ""
+		if len(images) > 0 {
+			cover = images[0]
+		}
+		items = append(items, model.Prompt{ID: "xianyu-awesome-gptimage2-" + leftPad(len(items)+1), Title: currentTitle, CoverURL: cover, Prompt: prompt, Tags: xianyuPromptTags(currentCategory), Preview: markdownPreview(images)})
+	}
+	for _, line := range strings.Split(section, "\n") {
+		if strings.HasPrefix(line, "### ") && !strings.HasPrefix(line, "#### ") {
+			finish()
+			currentTitle = ""
+			currentLines = []string{}
+			currentCategory = cleanXianyuCategory(strings.TrimSpace(strings.TrimPrefix(line, "### ")))
+			continue
+		}
+		if strings.HasPrefix(line, "#### ") {
+			finish()
+			currentTitle = cleanXianyuPromptTitle(strings.TrimSpace(strings.TrimPrefix(line, "#### ")))
+			currentLines = []string{}
+			continue
+		}
+		if currentTitle != "" {
+			currentLines = append(currentLines, line)
+		}
+	}
+	finish()
+	return items
+}
+
+func markdownSection(markdown, startHeading, endHeading string) string {
+	start := strings.Index(markdown, startHeading)
+	if start < 0 {
+		return ""
+	}
+	rest := markdown[start+len(startHeading):]
+	end := strings.Index(rest, endHeading)
+	if end < 0 {
+		return markdown[start:]
+	}
+	return markdown[start : start+len(startHeading)+end]
+}
+
+func cleanXianyuCategory(value string) string {
+	value = strings.TrimSpace(value)
+	for _, sep := range []string{"、", ".", "．", " "} {
+		if index := strings.Index(value, sep); index >= 0 {
+			prefix := strings.TrimSpace(value[:index])
+			if prefix != "" && len([]rune(prefix)) <= 4 {
+				value = strings.TrimSpace(value[index+len(sep):])
+			}
+			break
+		}
+	}
+	return value
+}
+
+func cleanXianyuPromptTitle(value string) string {
+	value = strings.TrimSpace(value)
+	if index := strings.Index(value, " "); index > 0 {
+		prefix := value[:index]
+		if strings.Contains(prefix, ".") || strings.Contains(prefix, "．") {
+			value = strings.TrimSpace(value[index+1:])
+		}
+	}
+	return value
+}
+
+func xianyuCodeBlockText(block string) string {
+	lines := []string{}
+	inCode := false
+	for _, line := range strings.Split(block, "\n") {
+		text := strings.TrimSpace(line)
+		if strings.HasPrefix(text, "```") {
+			if inCode {
+				break
+			}
+			inCode = true
+			continue
+		}
+		if inCode {
+			lines = append(lines, line)
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func xianyuFallbackPromptText(block string) string {
+	lines := []string{}
+	for _, line := range strings.Split(block, "\n") {
+		text := strings.TrimSpace(line)
+		if text == "" || strings.HasPrefix(text, "#") || strings.HasPrefix(text, "---") || strings.HasPrefix(text, "![") || strings.HasPrefix(text, "|") || strings.HasPrefix(text, ">") || strings.HasPrefix(text, "```") {
+			continue
+		}
+		if strings.HasPrefix(text, "- 原文链接") || strings.HasPrefix(text, "- 公众号") || strings.HasPrefix(text, "- 作者") || strings.HasPrefix(text, "- 本次补充") || strings.HasPrefix(text, "- 说明") {
+			continue
+		}
+		text = strings.TrimSpace(strings.TrimPrefix(text, "-"))
+		text = strings.TrimSpace(strings.TrimPrefix(text, "*"))
+		if strings.HasPrefix(text, "提示词：") {
+			text = strings.TrimSpace(strings.TrimPrefix(text, "提示词："))
+		}
+		if text != "" && !strings.HasPrefix(text, "http") {
+			lines = append(lines, text)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func xianyuPromptTags(category string) []string {
+	tags := []string{"gpt-image-2"}
+	if category != "" {
+		tags = append(tags, splitTags(category, "\\s*(/|&|、|与)\\s*")...)
+	}
+	return tags
+}
+
+func buildXianyuLatestXPrompts(offset int) ([]model.Prompt, error) {
+	raw, err := fetchText(xianyuAwesomeGptImage2RawBase, "data/latest-prompts.json")
+	if err != nil {
+		return nil, err
+	}
+	data := xianyuLatestPromptData{}
+	if err := json.Unmarshal([]byte(raw), &data); err != nil {
+		return nil, err
+	}
+	items := []model.Prompt{}
+	seen := map[string]bool{}
+	appendOne := func(item xianyuLatestPrompt) {
+		prompt := strings.TrimSpace(item.Prompt)
+		if prompt == "" {
+			return
+		}
+		key := firstXianyuNonEmpty(item.XURL, item.URL, item.Author+item.CreatedAt+prompt)
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		image := firstXianyuNonEmpty(item.PrimaryImageURL, firstString(item.ImageURLs))
+		title := firstXianyuNonEmpty(item.Reason, item.Author, "X Prompt")
+		preview := xianyuLatestXPreview(item, image)
+		date := normalizePromptTime(item.CreatedAt)
+		items = append(items, model.Prompt{ID: "xianyu-awesome-gptimage2-" + leftPad(offset+len(items)+1), Title: title, CoverURL: image, Prompt: prompt, Tags: []string{"x"}, CreatedAt: date, UpdatedAt: date, Preview: preview})
+	}
+	for _, group := range data.Dates {
+		for _, item := range group.Items {
+			appendOne(item)
+		}
+	}
+	for _, item := range data.Items {
+		appendOne(item)
+	}
+	return items, nil
+}
+
+func xianyuLatestXPreview(item xianyuLatestPrompt, image string) string {
+	lines := []string{}
+	link := firstXianyuNonEmpty(item.XURL, item.URL)
+	if link != "" {
+		lines = append(lines, link)
+	}
+	for _, url := range item.ImageURLs {
+		if url = strings.TrimSpace(url); url != "" {
+			lines = append(lines, url)
+		}
+	}
+	if len(lines) == 1 && image != "" {
+		lines = append(lines, image)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func normalizePromptTime(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, time.RFC1123, time.RFC1123Z, "2006-01-02"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed.Format(time.RFC3339)
+		}
+	}
+	return value
+}
+
+func firstXianyuNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstString(values []string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func buildYouMindGptImage2Prompts() ([]model.Prompt, error) {

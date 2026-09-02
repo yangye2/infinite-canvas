@@ -4,12 +4,12 @@ import (
 	"log"
 	"sync"
 
-	"github.com/basketikun/infinite-canvas/model"
-	"github.com/basketikun/infinite-canvas/repository"
+	"github.com/tigerowo/infinite-canvas/model"
+	"github.com/tigerowo/infinite-canvas/repository"
 	"github.com/robfig/cron/v3"
 )
 
-const defaultPromptSyncCron = "*/5 * * * *"
+const defaultPromptSyncCron = "0 0 * * *"
 
 var (
 	promptSyncCron *cron.Cron
