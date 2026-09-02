@@ -370,11 +370,12 @@ function isAgnesImageConfig(config: AiConfig, model: string) {
 }
 
 function normalizeAgnesImageSize(size: string) {
+    // Documented valid examples: 1024x768 (landscape), 1024x1024 (square), 768x1024 (portrait).
     const value = size.trim();
     if (/^\d+x\d+$/i.test(value)) return value;
     if (value.includes(":")) {
         const ratio = parseRatioValue(value);
-        return `${ratio.width * 512}x${ratio.height * 512}`;
+        return ratio.width > ratio.height ? "1024x768" : ratio.width < ratio.height ? "768x1024" : "1024x1024";
     }
     return "1024x1024";
 }
@@ -395,16 +396,21 @@ async function requestAgnesGeneration(config: AiConfig, prompt: string, n: numbe
     const results = await Promise.all(
         Array.from({ length: n }, async () => {
             const images = await Promise.all(references.map(resolveAgnesImageInput));
+            // Per docs: text-to-image uses top-level return_base64 (no extra_body needed);
+            // image-to-image puts both image[] and response_format inside extra_body.
             const payload: Record<string, unknown> = {
                 model: requestModelName(config),
                 prompt: withSystemPrompt(config, prompt),
                 size: size || normalizeAgnesImageSize(config.size),
-                extra_body: {
-                    response_format: "b64_json",
-                    ...(images.length ? { image: images } : {}),
-                },
             };
-            if (!images.length) payload.return_base64 = true;
+            if (images.length) {
+                payload.extra_body = {
+                    image: images,
+                    response_format: "b64_json",
+                };
+            } else {
+                payload.return_base64 = true;
+            }
             try {
                 const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
                 return parseImagePayload(response.data);

@@ -281,11 +281,13 @@ function normalizeAgnesVideoSize(value: string) {
     return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: 1152, height: 768 };
 }
 
-/** Agnes requires num_frames <= 441 following the 8n + 1 rule at 24 fps. */
+/** Agnes Video V2.0 only documents preset frame counts (81/121/241/441 at 24fps ≈ 3/5/10/18s); snap to the nearest one. */
 function normalizeAgnesNumFrames(value: string) {
-    const seconds = Math.max(1, Math.min(18, Math.floor(Number(value) || 5)));
-    const frames = Math.max(9, Math.min(441, seconds * 24 + 1));
-    return Math.floor((frames - 1) / 8) * 8 + 1;
+    const seconds = Math.max(1, Math.min(20, Math.floor(Number(value) || 5)));
+    if (seconds <= 4) return 81;
+    if (seconds <= 7) return 121;
+    if (seconds <= 13) return 241;
+    return 441;
 }
 
 function agnesTaskError(error: AgnesTask["error"]) {
