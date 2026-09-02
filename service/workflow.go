@@ -43,6 +43,86 @@ type WorkflowAgentDraftResponse struct {
 	Model    string   `json:"model"`
 }
 
+// WorkflowSystemOwner 系统工作流模板的属主标记（空字符串 = 平台级公共模板）。
+const WorkflowSystemOwner = ""
+
+// ListWorkflowTemplates 后台：返回所有平台级公共模板（scope=public 且 owner 为空）。
+func ListWorkflowTemplates() ([]CreativeWorkflowPayload, error) {
+	records, err := repository.ListSystemWorkflowTemplates()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]CreativeWorkflowPayload, 0, len(records))
+	for _, record := range records {
+		result = append(result, creativeWorkflowPayload(record, WorkflowSystemOwner))
+	}
+	return result, nil
+}
+
+// SaveWorkflowTemplate 后台：保存平台级工作流模板（scope 强制 public、owner 清空）。
+func SaveWorkflowTemplate(payload CreativeWorkflowPayload) (CreativeWorkflowPayload, error) {
+	scope := strings.ToLower(strings.TrimSpace(payload.Scope))
+	if scope != "public" {
+		scope = "public"
+	}
+	current := now()
+	id := strings.TrimSpace(payload.ID)
+	var existing model.CreativeWorkflow
+	if id != "" {
+		record, found, err := repository.GetCreativeWorkflow(id)
+		if err != nil {
+			return CreativeWorkflowPayload{}, err
+		}
+		if found {
+			existing = record
+		}
+	}
+	if id == "" {
+		id = uuid.NewString()
+	}
+	createdAt := existing.CreatedAt
+	if createdAt == "" {
+		createdAt = current
+	}
+	record := model.CreativeWorkflow{
+		ID:          id,
+		OwnerUserID: WorkflowSystemOwner,
+		Scope:       scope,
+		Name:        strings.TrimSpace(payload.Name),
+		Category:    strings.TrimSpace(payload.Category),
+		Description: strings.TrimSpace(payload.Description),
+		Data:        string(payload.Data),
+		CreatedAt:   createdAt,
+		UpdatedAt:   current,
+	}
+	if record.Name == "" {
+		return CreativeWorkflowPayload{}, errors.New("请输入工作流名称")
+	}
+	if strings.TrimSpace(record.Data) == "" {
+		record.Data = "{}"
+	}
+	saved, err := repository.SaveCreativeWorkflow(record)
+	if err != nil {
+		return CreativeWorkflowPayload{}, err
+	}
+	return creativeWorkflowPayload(saved, WorkflowSystemOwner), nil
+}
+
+// DeleteWorkflowTemplate 后台：删除平台级工作流模板。
+func DeleteWorkflowTemplate(id string) error {
+	record, found, err := repository.GetCreativeWorkflow(id)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	if record.OwnerUserID != WorkflowSystemOwner {
+		return errors.New("只能删除平台级工作流模板")
+	}
+	return repository.DeleteCreativeWorkflow(id)
+}
+
 func ListCreativeWorkflows(ctx context.Context) ([]CreativeWorkflowPayload, error) {
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {

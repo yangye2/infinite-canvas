@@ -53,6 +53,37 @@ func DraftUserWorkflow(w http.ResponseWriter, r *http.Request) {
 	OK(w, result)
 }
 
+func AdminWorkflowTemplates(w http.ResponseWriter, r *http.Request) {
+	templates, err := service.ListWorkflowTemplates()
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, map[string]any{"items": templates})
+}
+
+func AdminSaveWorkflowTemplate(w http.ResponseWriter, r *http.Request) {
+	var request service.CreativeWorkflowPayload
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		Fail(w, "工作流模板数据格式错误")
+		return
+	}
+	result, err := service.SaveWorkflowTemplate(request)
+	if err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, result)
+}
+
+func AdminDeleteWorkflowTemplate(w http.ResponseWriter, r *http.Request, id string) {
+	if err := service.DeleteWorkflowTemplate(id); err != nil {
+		FailError(w, err)
+		return
+	}
+	OK(w, true)
+}
+
 func AdminAICallLogs(w http.ResponseWriter, r *http.Request) {
 	list, err := service.ListAICallLogs(parseQuery(r))
 	if err != nil {

@@ -17,6 +17,17 @@ func ListCreativeWorkflows(userID string) ([]model.CreativeWorkflow, error) {
 	return workflows, err
 }
 
+// ListSystemWorkflowTemplates 返回平台级公共模板（owner 为空字符串）。
+func ListSystemWorkflowTemplates() ([]model.CreativeWorkflow, error) {
+	db, err := DB()
+	if err != nil {
+		return nil, err
+	}
+	var workflows []model.CreativeWorkflow
+	err = db.Where("scope = ? AND owner_user_id = ?", "public", "").Order("updated_at DESC").Find(&workflows).Error
+	return workflows, err
+}
+
 func GetCreativeWorkflow(id string) (model.CreativeWorkflow, bool, error) {
 	db, err := DB()
 	if err != nil {

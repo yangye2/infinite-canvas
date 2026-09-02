@@ -373,3 +373,29 @@ export type StorageCapacityResult = {
 export async function measureAdminStorageProvider(token: string, payload: { index: number; provider: AdminStorageProvider }) {
     return apiPost<StorageCapacityResult>("/api/admin/storage/measure", payload, token);
 }
+
+// ---------- 工作流模板 ----------
+
+export type AdminWorkflowTemplate = {
+    id: string;
+    name: string;
+    category: string;
+    description: string;
+    data: string; // JSON: variables + config
+    scope: string;
+    createdAt: string;
+    updatedAt: string;
+    editable: boolean;
+};
+
+export async function fetchAdminWorkflowTemplates(token: string) {
+    return apiGet<{ items: AdminWorkflowTemplate[] }>("/api/admin/workflow-templates", undefined, token);
+}
+
+export async function saveAdminWorkflowTemplate(token: string, template: Partial<AdminWorkflowTemplate>) {
+    return apiPost<AdminWorkflowTemplate>("/api/admin/workflow-templates", template, token);
+}
+
+export async function deleteAdminWorkflowTemplate(token: string, id: string) {
+    return apiDelete<boolean>(`/api/admin/workflow-templates/${encodeURIComponent(id)}`, token);
+}

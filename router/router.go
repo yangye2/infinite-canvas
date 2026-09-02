@@ -139,6 +139,11 @@ func New() *gin.Engine {
 	admin.GET("/banners", gin.WrapF(handler.AdminBanners))
 	admin.POST("/banners", gin.WrapF(handler.AdminSaveBanners))
 	admin.POST("/banners/upload", gin.WrapF(handler.AdminUploadBannerImage))
+	admin.GET("/workflow-templates", gin.WrapF(handler.AdminWorkflowTemplates))
+	admin.POST("/workflow-templates", gin.WrapF(handler.AdminSaveWorkflowTemplate))
+	admin.DELETE("/workflow-templates/:id", func(c *gin.Context) {
+		handler.AdminDeleteWorkflowTemplate(c.Writer, c.Request, c.Param("id"))
+	})
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {
