@@ -1,4 +1,4 @@
-import { apiGet } from "@/services/api/request";
+import { apiGet, apiPost } from "@/services/api/request";
 
 export type ServerBanner = {
     imageUrl: string;
