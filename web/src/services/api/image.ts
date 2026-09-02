@@ -393,34 +393,38 @@ async function resolveAgnesImageInput(image: ReferenceImage) {
  * live inside extra_body, while text-to-image without references returns base64 via return_base64.
  */
 async function requestAgnesGeneration(config: AiConfig, prompt: string, n: number, size: string | undefined, references: ReferenceImage[] = [], options?: RequestOptions) {
-    const results = await Promise.all(
-        Array.from({ length: n }, async () => {
-            const images = await Promise.all(references.map(resolveAgnesImageInput));
-            // Per docs: text-to-image uses top-level return_base64 (no extra_body needed);
-            // image-to-image puts both image[] and response_format inside extra_body.
-            const payload: Record<string, unknown> = {
-                model: requestModelName(config),
-                prompt: withSystemPrompt(config, prompt),
-                size: size || normalizeAgnesImageSize(config.size),
-            };
-            if (images.length) {
-                payload.extra_body = {
-                    image: images,
-                    response_format: "b64_json",
+    try {
+        const results = await Promise.all(
+            Array.from({ length: n }, async () => {
+                const images = await Promise.all(references.map(resolveAgnesImageInput));
+                // Per docs: text-to-image uses top-level return_base64 (no extra_body needed);
+                // image-to-image puts both image[] and response_format inside extra_body.
+                const payload: Record<string, unknown> = {
+                    model: requestModelName(config),
+                    prompt: withSystemPrompt(config, prompt),
+                    size: size || normalizeAgnesImageSize(config.size),
                 };
-            } else {
-                payload.return_base64 = true;
+                if (images.length) {
+                    payload.extra_body = {
+                        image: images,
+                        response_format: "b64_json",
+                    };
+                } else {
+                    payload.return_base64 = true;
+                }
+                try {
+                    const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
+                    return parseImagePayload(response.data);
+                } catch (error) {
+                    throw new Error(readAxiosError(error, apiText("requestFailed")));
+                }
+            }),
+        );
+        return results.flat();
+    } finally {
+        // Parallel requests can consume credits before Promise.all rejects on a later failure.
+        refreshRemoteUser(config);
             }
-            try {
-                const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
-                return parseImagePayload(response.data);
-            } catch (error) {
-                throw new Error(readAxiosError(error, apiText("requestFailed")));
-            }
-        }),
-    );
-    refreshRemoteUser(config);
-    return results.flat();
 }
 
 function geminiBaseUrl(config: Pick<AiConfig, "baseUrl">) {

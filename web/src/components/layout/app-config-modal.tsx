@@ -68,7 +68,8 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const editingChannel = config.channels.find((channel) => channel.id === editingChannelId) || null;
     const backendModelChannel = publicSettings?.modelChannel || null;
     const backendCustomAllowed = backendModelChannel ? backendModelChannel.allowCustomChannel !== false : true;
-    const channelMode = backendModelChannel && config.channelMode === "remote" ? "remote" : "local";
+    const channelMode =
+        backendModelChannel && (config.channelMode === "remote" || !backendCustomAllowed) ? "remote" : "local";
     const locale = i18n.resolvedLanguage as AppLocale;
     useEffect(() => setActiveTab(initialTab), [initialTab]);
 
