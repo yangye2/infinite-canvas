@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 
@@ -95,11 +96,27 @@ func EnsureUserSyncAllowed(user model.AuthUser, capability string) error {
 	return nil
 }
 
-// NormalizeSyncOverride 校验并规范化后台提交的用户同步覆盖 JSON：
+// NormalizeSyncOverride 校验并规范化后台提交的用户同步覆盖：
+// 兼容对象 {"userData":true,...} 和 JSON 字符串编码的对象两种形式；
 // 仅接受 userData/workflows/assets 三个键，值只能是 null/true/false。
 func NormalizeSyncOverride(raw json.RawMessage) (string, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		return "", nil
+	}
+	// 前端可能把对象 stringify 后再发过来，此时先解出内层 JSON。
+	if trimmed[0] == '"' {
+		var encoded string
+		if err := json.Unmarshal(trimmed, &encoded); err != nil {
+			return "", err
+		}
+		trimmed = bytes.TrimSpace([]byte(encoded))
+		if len(trimmed) == 0 || string(trimmed) == "null" {
+			return "", nil
+		}
+	}
 	var parsed map[string]*bool
-	if err := json.Unmarshal(raw, &parsed); err != nil {
+	if err := json.Unmarshal(trimmed, &parsed); err != nil {
 		return "", err
 	}
 	normalized := map[string]*bool{}
