@@ -76,6 +76,9 @@ func CurrentUserImageGenerationLogs(ctx context.Context) ([]json.RawMessage, err
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
 	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
+	}
 	cleanupGenerationLogs()
 	if err := migrateUserImageGenerationLogs(user.ID); err != nil {
 		return nil, err
@@ -91,6 +94,9 @@ func SaveCurrentUserImageGenerationLogs(ctx context.Context, raws []json.RawMess
 	user, ok := UserFromContext(ctx)
 	if !ok || user.ID == "" {
 		return nil, errors.New("请先登录")
+	}
+	if err := EnsureUserSyncAllowed(user, SyncCapabilityUserData); err != nil {
+		return nil, err
 	}
 	cleanupGenerationLogs()
 	logs := make([]model.ImageGenerationLog, 0, len(raws))
