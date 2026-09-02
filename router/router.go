@@ -16,6 +16,8 @@ func New() *gin.Engine {
 	api.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
+	api.GET("/banners", gin.WrapF(handler.Banners))
+	router.Static("/banners", "./banners")
 	api.POST("/auth/register", gin.WrapF(handler.Register))
 	api.POST("/auth/login", gin.WrapF(handler.Login))
 	api.GET("/auth/linux-do/authorize", gin.WrapF(handler.LinuxDoAuthorize))

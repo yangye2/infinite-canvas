@@ -1,0 +1,9 @@
+{
+    "items": [
+        { "imageUrl": "/banners/metaso.webp", "videoUrl": "", "linkUrl": "https://metaso.cn/minimax-h3/?s=tt", "alt": "Metaso" },
+        { "imageUrl": "/banners/3ddirectortl.webp", "videoUrl": "", "linkUrl": "", "alt": "3D Director Timeline" },
+        { "imageUrl": "/banners/agent.webp", "videoUrl": "", "linkUrl": "", "alt": "Agent" },
+        { "imageUrl": "/banners/panorama.webp", "videoUrl": "", "linkUrl": "", "alt": "Panorama" },
+        { "imageUrl": "/banners/3ddirector.webp", "videoUrl": "", "linkUrl": "", "alt": "3D Director" }
+    ]
+}

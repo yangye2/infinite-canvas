@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { useRouter } from "next/navigation";
 
 import { fetchPrompts, type Prompt } from "@/services/api/prompts";
+import { fetchBanners } from "@/services/api/banners";
 import { cn } from "@/lib/utils";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
@@ -25,6 +26,7 @@ import {
 } from "./canvas/types";
 
 
+// 首页轮播图内置兜底数据：后端 /api/banners 不可用时使用。
 const HOME_BANNERS: HomeBanner[] = [
     { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.6/img/infinite-canvas/metaso.webp", videoUrl: "", linkUrl: "https://metaso.cn/minimax-h3/?s=tt", alt: "1" },
     { imageUrl: "https://gcore.jsdelivr.net/gh/tigerowo/cdn-tdeh@v0.5/img/infinite-canvas/3ddirectortl.webp", videoUrl: "", linkUrl: "", alt: "2" },
@@ -58,6 +60,7 @@ export default function IndexPage() {
     const [previewOpen, setPreviewOpen] = useState(false);
     const [prompt, setPrompt] = useState("");
     const [pendingAssets, setPendingAssets] = useState<PendingAgentAsset[]>([]);
+    const [banners, setBanners] = useState<HomeBanner[]>(HOME_BANNERS);
     const [assetPickerOpen, setAssetPickerOpen] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [agentConfig, setAgentConfig] = useState<CanvasAgentConfig>(() => ({
@@ -76,6 +79,15 @@ export default function IndexPage() {
             .then((data) => setPromptShowcase(data.items))
             .catch((error) => message.error(error instanceof Error ? error.message : "获取提示词失败"));
     }, [message]);
+
+    useEffect(() => {
+        // 优先使用服务端下发的轮播图（banners/banners.json），失败时保留内置兜底。
+        void fetchBanners()
+            .then((data) => {
+                if (data.items.length > 0) setBanners(data.items.map((item) => ({ ...item, alt: item.alt || "" })));
+            })
+            .catch(() => {});
+    }, []);
 
     const addPendingAsset = (payload: InsertAssetPayload) => {
         const asset = toPendingAgentAsset(payload, canvasResourceLabel(payload.kind, pendingAssetCountsRef.current[payload.kind]++));
@@ -128,7 +140,7 @@ export default function IndexPage() {
         <main className="relative h-full overflow-x-hidden overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] text-stone-950 dark:bg-[radial-gradient(rgba(245,245,244,.18)_1px,transparent_1px)] dark:text-stone-100">
             <section className="relative mx-auto min-h-[calc(100vh-4rem)] max-w-7xl px-6">
                 <section className="relative flex min-h-[620px] flex-col items-center justify-center py-10 sm:py-14">
-                    <HomeBannerCarousel banners={HOME_BANNERS} />
+                    <HomeBannerCarousel banners={banners} />
                     <div className="mt-12 w-full max-w-[820px]">
                         <CanvasAssistantComposer
                             prompt={prompt}

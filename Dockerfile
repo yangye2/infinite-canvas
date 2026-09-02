@@ -31,6 +31,7 @@ WORKDIR /app
 COPY VERSION /app/VERSION
 COPY CHANGELOG.md /app/CHANGELOG.md
 COPY --from=api-build /server /app/server
+COPY banners /app/banners
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 RUN chmod +x /app/docker-entrypoint.sh
 COPY --from=web-build /app/web/public /app/web/public
