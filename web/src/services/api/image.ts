@@ -387,19 +387,24 @@ async function resolveAgnesImageInput(image: ReferenceImage) {
     return dataUrl;
 }
 
+/**
+ * Agnes image API (https://wiki.agnes-ai.com): image references and response_format
+ * live inside extra_body, while text-to-image without references returns base64 via return_base64.
+ */
 async function requestAgnesGeneration(config: AiConfig, prompt: string, n: number, size: string | undefined, references: ReferenceImage[] = [], options?: RequestOptions) {
     const results = await Promise.all(
         Array.from({ length: n }, async () => {
-            const image = await Promise.all(references.map(resolveAgnesImageInput));
-            const payload = {
+            const images = await Promise.all(references.map(resolveAgnesImageInput));
+            const payload: Record<string, unknown> = {
                 model: requestModelName(config),
                 prompt: withSystemPrompt(config, prompt),
                 size: size || normalizeAgnesImageSize(config.size),
-                ...(image.length ? { image } : { return_base64: true }),
                 extra_body: {
                     response_format: "b64_json",
+                    ...(images.length ? { image: images } : {}),
                 },
             };
+            if (!images.length) payload.return_base64 = true;
             try {
                 const response = await axios.post<ImageApiResponse>(aiApiUrl(config, "/images/generations"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal });
                 return parseImagePayload(response.data);

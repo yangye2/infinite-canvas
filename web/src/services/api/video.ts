@@ -13,11 +13,21 @@ import type { ReferenceImage } from "@/types/image";
 type VideoResponse = { id: string; status?: string; error?: { message?: string }; url?: string; result_url?: string; video_url?: string; content?: { video_url?: string; url?: string } | null };
 type ApiVideoResponse = VideoResponse | { code?: number | string; data?: VideoResponse | null; msg?: string; message?: string; error?: { message?: string } };
 type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: string; message?: string; error?: { message?: string } };
+type AgnesTask = {
+    id?: string;
+    task_id?: string;
+    video_id?: string;
+    status?: "queued" | "in_progress" | "completed" | "failed" | "succeeded" | "cancelled";
+    progress?: number;
+    remixed_from_video_id?: string;
+    metadata?: { url?: string } | null;
+    error?: { message?: string } | string | null;
+};
 type RequestOptions = { signal?: AbortSignal };
 const apiText = (key: string, options?: Record<string, unknown>) => i18n.t(`apiErrors.${key}`, options);
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "plugin"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "plugin" | "agnes"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 /** Results for scripted (plugin) video models, which run their own create+poll in one shot at task creation. */
@@ -65,6 +75,9 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const script = resolveModelScript(config, selectedModel);
     if (script) return createPluginVideoTask(requestConfig, selectedModel, script, prompt, references, options);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (isAgnesVideoConfig(requestConfig, requestConfig.model)) {
+        return createAgnesTask(requestConfig, selectedModel, prompt, references, options);
+    }
     return createOpenAIVideoTask(requestConfig, selectedModel, prompt, references, options);
 }
 
@@ -75,6 +88,7 @@ export async function pollVideoGenerationTask(config: AiConfig, task: VideoGener
     }
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (task.provider === "agnes") return pollAgnesTask(requestConfig, task, options);
     const modelParam = remoteModelParam(requestConfig, task.model);
     try {
         const video = unwrapVideoResponse((await axios.get<ApiVideoResponse>(aiApiUrl(requestConfig, `/videos/${task.id}`), { headers: aiHeaders(requestConfig), params: modelParam, signal: options?.signal })).data);
@@ -190,6 +204,97 @@ async function videoResultFromUrl(url: string, options?: RequestOptions): Promis
         if (axios.isCancel(error) || options?.signal?.aborted) throw error;
         return { url, mimeType: "video/mp4" };
     }
+}
+
+/** Agnes video channel check, kept in sync with the backend's isAgnesVideo(). */
+function isAgnesVideoConfig(config: AiConfig, model: string) {
+    return (config.channelMode === "local" && config.apiFormat === "agnes") || model.toLowerCase().includes("agnes-video");
+}
+
+/** Agnes Video V2.0: POST {base}/v1/videos with width/height/num_frames, image for i2v, extra_body keyframes for multi-image. */
+async function createAgnesTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const image = await Promise.all(references.slice(0, 7).map(resolveAgnesImageInput));
+    const size = normalizeAgnesVideoSize(config.size);
+    const payload: Record<string, unknown> = {
+        model: modelOptionName(model),
+        prompt,
+        width: size.width,
+        height: size.height,
+        num_frames: normalizeAgnesNumFrames(config.videoSeconds),
+        frame_rate: 24,
+    };
+    if (image.length === 1) payload.image = image[0];
+    if (image.length > 1) payload.extra_body = { image, mode: "keyframes" };
+
+    try {
+        const created = unwrapAgnesTask((await axios.post<ApiEnvelope<AgnesTask>>(aiApiUrl(config, "/videos"), payload, { headers: aiHeaders(config, "application/json"), signal: options?.signal })).data);
+        const id = created.video_id || created.task_id || created.id;
+        if (!id) throw new Error(apiText("noVideoTaskId"));
+        return { id, provider: "agnes", model };
+    } catch (error) {
+        if (axios.isCancel(error) || options?.signal?.aborted) throw error;
+        throw new Error(readAxiosError(error, apiText("videoTaskCreateFailed")));
+    }
+}
+
+async function pollAgnesTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    const modelParam = remoteModelParam(config, task.model);
+    try {
+        const state = unwrapAgnesTask((await axios.get<ApiEnvelope<AgnesTask>>(agnesVideoPollUrl(config, task), { headers: aiHeaders(config), params: modelParam, signal: options?.signal })).data);
+        if (state.status === "completed" || state.status === "succeeded") {
+            // Result URL lives in metadata.url per the Agnes Video V2.0 docs.
+            const url = state.metadata?.url || state.remixed_from_video_id || "";
+            if (!url) return { status: "failed", error: apiText("noPlayableVideo") };
+            const result = await videoResultFromUrl(url, options);
+            if (config.channelMode === "remote") void useUserStore.getState().hydrateUser();
+            return { status: "completed", result };
+        }
+        if (state.status === "failed" || state.status === "cancelled") return { status: "failed", error: agnesTaskError(state.error) || apiText("videoGenerationFailed") };
+        return { status: "pending" };
+    } catch (error) {
+        if (axios.isCancel(error) || options?.signal?.aborted) throw error;
+        throw new Error(readAxiosError(error, apiText("videoTaskQueryFailed")));
+    }
+}
+
+function agnesVideoPollUrl(config: AiConfig, task: VideoGenerationTask) {
+    if (config.channelMode === "remote") return aiApiUrl(config, `/videos/${encodeURIComponent(task.id)}`);
+    // Local direct calls use the recommended query-style result endpoint.
+    return `${agnesRootApiUrl(config.baseUrl)}/agnesapi?video_id=${encodeURIComponent(task.id)}`;
+}
+
+function agnesRootApiUrl(baseUrl: string) {
+    return baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+}
+
+async function resolveAgnesImageInput(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    if (isPublicMediaUrl(directUrl)) return directUrl;
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error(apiText("referenceImageReadFailed"));
+    return dataUrl;
+}
+
+function normalizeAgnesVideoSize(value: string) {
+    const size = normalizeVideoSize(value) || "1152x768";
+    const match = size.match(/^(\d+)x(\d+)$/);
+    return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: 1152, height: 768 };
+}
+
+/** Agnes requires num_frames <= 441 following the 8n + 1 rule at 24 fps. */
+function normalizeAgnesNumFrames(value: string) {
+    const seconds = Math.max(1, Math.min(18, Math.floor(Number(value) || 5)));
+    const frames = Math.max(9, Math.min(441, seconds * 24 + 1));
+    return Math.floor((frames - 1) / 8) * 8 + 1;
+}
+
+function agnesTaskError(error: AgnesTask["error"]) {
+    if (!error) return "";
+    return typeof error === "string" ? error : error.message || "";
+}
+
+function unwrapAgnesTask(payload: ApiEnvelope<AgnesTask>) {
+    return unwrapEnvelope(payload, apiText("noVideoTask"));
 }
 
 function assertVideoConfig(config: AiConfig, model: string) {
