@@ -17,7 +17,12 @@ func New() *gin.Engine {
 		c.String(http.StatusOK, "ok")
 	})
 	api.GET("/banners", gin.WrapF(handler.Banners))
-	router.Static("/banners", "./banners")
+	router.GET("/banners/:file", func(c *gin.Context) {
+		handler.BannerImage(c.Writer, c.Request, c.Param("file"))
+	})
+	router.HEAD("/banners/:file", func(c *gin.Context) {
+		handler.BannerImage(c.Writer, c.Request, c.Param("file"))
+	})
 	api.POST("/auth/register", gin.WrapF(handler.Register))
 	api.POST("/auth/login", gin.WrapF(handler.Login))
 	api.GET("/auth/linux-do/authorize", gin.WrapF(handler.LinuxDoAuthorize))
@@ -131,6 +136,9 @@ func New() *gin.Engine {
 	api.POST("/admin/login", gin.WrapF(handler.AdminLogin))
 
 	admin := api.Group("/admin", middleware.AdminAuth)
+	admin.GET("/banners", gin.WrapF(handler.AdminBanners))
+	admin.POST("/banners", gin.WrapF(handler.AdminSaveBanners))
+	admin.POST("/banners/upload", gin.WrapF(handler.AdminUploadBannerImage))
 	admin.GET("/users", gin.WrapF(handler.AdminUsers))
 	admin.POST("/users", gin.WrapF(handler.AdminSaveUser))
 	admin.POST("/users/:id/credits", func(c *gin.Context) {

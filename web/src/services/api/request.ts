@@ -32,14 +32,14 @@ export async function apiGet<T>(url: string, params?: ApiParams, token?: string)
 }
 
 export async function apiPost<T>(url: string, body?: unknown, token?: string) {
+    const headers: Record<string, string> = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    // FormData 交给 axios 自动设置 multipart 边界，不要覆盖 Content-Type。
+    if (!(body instanceof FormData)) headers["Content-Type"] = "application/json";
     return apiRequest<T>({
         url,
         method: "POST",
         data: body ?? {},
-        headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers,
     });
 }
 
