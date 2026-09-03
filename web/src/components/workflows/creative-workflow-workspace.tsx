@@ -12,7 +12,7 @@ import { ModelPicker } from "@/components/model-picker";
 import { AssetPickerModal, type InsertAssetPayload } from "@/app/(user)/canvas/components/asset-picker-modal";
 import { canvasThemes, type CanvasTheme } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration, getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
-import { createCanvasImageTask, requestEdit, requestGeneration, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
+import { batchCanvasImageTaskStatus, createCanvasImageTask, requestEdit, requestGeneration, requestImageQuestion, type CanvasImageTask } from "@/services/api/image";
 import { saveImageGenerationLogs } from "@/services/api/generation-logs";
 import { deleteUserWorkflow, draftUserWorkflow, fetchUserConfig, fetchUserWorkflows, saveUserWorkflow, type CreativeWorkflowRecord } from "@/services/api/user-config";
 import { deleteStoredImages, imageToDataUrl, uploadImage } from "@/services/image-storage";
@@ -77,6 +77,7 @@ type SeriesPromptDraft = {
     status: "draft" | "running" | "success" | "failed";
     error?: string;
     resultIds?: string[];
+    resultImages?: Array<{ id: string; url: string }>;
 };
 
 export type WorkflowRunResult = {
@@ -182,6 +183,7 @@ type ImageHistoryLog = {
 type GenerationCategory = { id: string; name: string; createdAt: number };
 
 const workflowStoreKey = (userId: string) => `infinite-canvas:creative-workflows:${userId || "guest"}`;
+const WORKFLOW_IMAGE_TASK_POLL_INTERVAL_MS = 10000;
 const SERIES_DRAFT_STORE_PREFIX = "infinite-canvas:series-drafts:";
 const CATEGORY_STORE_KEY = "infinite-canvas:image_generation_categories";
 const workflowStore = localforage.createInstance({ name: "infinite-canvas", storeName: "creative_workflows" });
@@ -789,6 +791,7 @@ export function CreativeWorkflowWorkspace({
                 try {
                     const task = await createCanvasImageTask({ ...runConfig, seedIndex: index, seedCount: count, count: "1" }, prompt, references, { source: "workflow", sourceId: log.id, clientTaskId: log.task?.id || `${taskId}:${index}` });
                     await saveWorkflowTaskLog({ ...log, task, lastPolledAt: Date.now() });
+                    return task;
                 } catch (error) {
                     const messageText = error instanceof Error ? error.message : "工作流图片任务创建失败";
                     await saveWorkflowTaskLog({ ...log, status: "失败", durationMs: Date.now() - startedAt, failCount: 1, errors: [messageText], lastPolledAt: Date.now() });
@@ -797,8 +800,11 @@ export function CreativeWorkflowWorkspace({
             }),
         );
         onGenerationLogSaved?.();
-        const createdCount = settled.filter((item) => item.status === "fulfilled").length;
-        if (!createdCount) {
+        const created: Array<{ log: ImageHistoryLog; task: CanvasImageTask }> = [];
+        settled.forEach((result, index) => {
+            if (result.status === "fulfilled") created.push({ log: taskLogs[index], task: result.value });
+        });
+        if (!created.length) {
             const messageText = "工作流图片任务创建失败";
             if (seriesDraftId) updateSeriesDraft(seriesDraftId, { status: "failed", error: messageText });
             setWorkflowTasks((value) => value.map((task) => (task.id === taskId ? { ...task, status: "failed", endedAt: Date.now(), durationMs: Date.now() - startedAt, error: messageText } : task)));
@@ -806,7 +812,102 @@ export function CreativeWorkflowWorkspace({
             message.error(messageText);
             return;
         }
-        message.success(`已创建 ${createdCount} 个工作流图片任务`);
+        message.success(`已创建 ${created.length} 个工作流图片任务`);
+        // 后端任务模式下继续轮询任务状态，把结果回写到草稿和任务卡。
+        await trackWorkflowImageTasks({ taskId, workflow, prompt, taskConfig, startedAt, seriesDraftId, items: created });
+    };
+
+    // 轮询后端图片任务直到完成，把结果回写到任务卡、多图草稿和生图历史。
+    const trackWorkflowImageTasks = async ({
+        taskId,
+        workflow,
+        prompt,
+        taskConfig,
+        startedAt,
+        seriesDraftId,
+        items,
+    }: {
+        taskId: string;
+        workflow: CreativeWorkflow;
+        prompt: string;
+        taskConfig: WorkflowGenerationConfig;
+        startedAt: number;
+        seriesDraftId?: string;
+        items: Array<{ log: ImageHistoryLog; task: CanvasImageTask }>;
+    }) => {
+        const deadline = Date.now() + Math.max(60, Number(taskConfig.timeout) || 600) * 1000;
+        const pending = new Map(items.map((item) => [item.task.id, item]));
+        const images: WorkflowRunResult[] = [];
+        let firstError = "";
+        let timedOut = false;
+        const settleItem = async (item: { log: ImageHistoryLog; task: CanvasImageTask }, task: CanvasImageTask) => {
+            const finishedAt = Date.now();
+            const durationMs = finishedAt - startedAt;
+            const failed = ["failed", "fail", "error", "cancelled", "canceled"].includes((task.status || "").toLowerCase());
+            const url = task.image_url || task.url || "";
+            const errorText = failed ? task.error?.message || task.error_detail || "图片生成失败" : !url ? "图片生成完成但没有返回图片地址" : "";
+            let width = task.width || 0;
+            let height = task.height || 0;
+            let bytes = task.bytes || 0;
+            let mimeType = task.mimeType || "image/png";
+            if (url && !errorText) {
+                try {
+                    const meta = await readImageMeta(url);
+                    width = width || meta.width;
+                    height = height || meta.height;
+                    mimeType = meta.mimeType || mimeType;
+                } catch {
+                    // 元信息读取失败不影响结果展示。
+                }
+            }
+            await saveWorkflowTaskLog(
+                errorText
+                    ? { ...item.log, status: "失败", durationMs, failCount: 1, errors: [errorText], task, lastPolledAt: finishedAt }
+                    : { ...item.log, status: "成功", durationMs, successCount: 1, imageCount: 1, images: [{ id: task.id, dataUrl: url, storageKey: task.storageKey || "", durationMs, width, height, bytes, mimeType }], thumbnails: [url], errors: [], task, lastPolledAt: finishedAt },
+            );
+            if (errorText) {
+                firstError = firstError || errorText;
+                return;
+            }
+            images.push({ id: task.id, workflowId: workflow.id, workflowName: workflow.name, prompt, imageUrl: url, storageKey: task.storageKey || "", width, height, bytes, mimeType, durationMs, createdAt: finishedAt });
+        };
+        while (pending.size) {
+            await new Promise((resolve) => window.setTimeout(resolve, WORKFLOW_IMAGE_TASK_POLL_INTERVAL_MS));
+            let tasks: CanvasImageTask[] = [];
+            try {
+                tasks = await batchCanvasImageTaskStatus(effectiveConfig, Array.from(pending.keys()));
+            } catch {
+                if (Date.now() >= deadline) break;
+                continue;
+            }
+            const taskById = new Map(tasks.map((task) => [task.id, task]));
+            for (const [id, item] of Array.from(pending.entries())) {
+                const task = taskById.get(id);
+                if (!task) continue;
+                const terminal = ["completed", "complete", "done", "succeeded", "success", "failed", "fail", "error", "cancelled", "canceled"].includes((task.status || "").toLowerCase()) || Boolean(task.image_url || task.url);
+                if (!terminal) continue;
+                pending.delete(id);
+                await settleItem(item, task);
+            }
+            if (pending.size && Date.now() >= deadline) {
+                timedOut = true;
+                break;
+            }
+        }
+        const endedAt = Date.now();
+        const durationMs = endedAt - startedAt;
+        const errorText = images.length ? (timedOut ? "部分图片生成超时" : firstError) : firstError || "图片生成失败";
+        if (seriesDraftId) updateSeriesDraft(seriesDraftId, images.length ? { status: "success", resultIds: images.map((image) => image.id), resultImages: images.map((image) => ({ id: image.id, url: image.imageUrl })) } : { status: "failed", error: errorText });
+        setWorkflowTasks((value) => value.map((task) => (task.id === taskId ? { ...task, status: images.length ? "success" : "failed", endedAt, durationMs, images, error: errorText || undefined } : task)));
+        if (images.length) {
+            setRunResults((value) => [...images, ...value]);
+            onWorkflowTaskSuccess?.({ taskId, images, durationMs, endedAt });
+            message.success(errorText ? `${images.length} 张生成成功，部分失败：${errorText}` : "工作流运行完成，结果已写入生图历史");
+        } else {
+            onWorkflowTaskFailure?.({ taskId, error: errorText, durationMs, endedAt });
+            message.error(errorText);
+        }
+        onGenerationLogSaved?.();
     };
 
     const executeWorkflowTask = async ({
@@ -900,7 +1001,7 @@ export function CreativeWorkflowWorkspace({
                 createdAt: finishedAt,
             }));
             if (seriesDraftId) {
-                updateSeriesDraft(seriesDraftId, { status: "success", resultIds: nextResults.map((image) => image.id) });
+                updateSeriesDraft(seriesDraftId, { status: "success", resultIds: nextResults.map((image) => image.id), resultImages: nextResults.map((image) => ({ id: image.id, url: image.imageUrl })) });
             }
             setWorkflowTasks((value) =>
                 value.map((task) =>
@@ -1483,6 +1584,15 @@ function SeriesPromptDraftCard({
                 </div>
             </div>
             <Input.TextArea value={draft.prompt} autoSize={{ minRows: 3, maxRows: 7 }} onChange={(event) => onChange({ prompt: event.target.value, status: draft.status === "success" ? "draft" : draft.status })} />
+            {draft.resultImages?.length ? (
+                <Image.PreviewGroup>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {draft.resultImages.map((image) => (
+                            <Image key={image.id} src={image.url} alt={draft.title} width={96} height={96} className="rounded-md border border-stone-200 object-cover dark:border-stone-800" />
+                        ))}
+                    </div>
+                </Image.PreviewGroup>
+            ) : null}
             {draft.error ? <div className="mt-2 rounded-md bg-red-100 px-2.5 py-1.5 text-xs text-red-600 dark:bg-red-950/40 dark:text-red-300">{draft.error}</div> : null}
         </article>
     );
@@ -1968,6 +2078,7 @@ function normalizeSeriesDraft(draft: SeriesPromptDraft): SeriesPromptDraft {
         status: draft.status === "running" ? "draft" : draft.status || "draft",
         error: draft.error,
         resultIds: Array.isArray(draft.resultIds) ? draft.resultIds : [],
+        resultImages: Array.isArray(draft.resultImages) ? draft.resultImages : [],
     };
 }
 
