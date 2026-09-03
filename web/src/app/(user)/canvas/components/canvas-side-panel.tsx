@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Empty, Input, Pagination, Select, Spin } from "antd";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { BookOpen, ChevronRight, Clapperboard, Eye, FileText, Group, Image as ImageIcon, Music2, Plus, Search, Settings2, Type, Video } from "lucide-react";
 import { motion } from "motion/react";
 
@@ -27,6 +27,7 @@ const PANEL_EASE = [0.22, 1, 0.36, 1] as const;
 const PANEL_MIN_WIDTH = 220;
 const PANEL_MAX_WIDTH = 480;
 const ASSET_PAGE_SIZE = 12;
+const PROMPT_PAGE_SIZE = 50;
 const PROMPT_CACHE_TIME = 24 * 60 * 60 * 1000;
 
 type PanelTab = "canvas" | "assets" | "prompts";
@@ -436,19 +437,45 @@ async function fetchPromptCategory(category: string) {
 
 function PromptGroup({ category, keyword, open, theme, onToggle, onView, onInsert }: { category: string; keyword: string; open: boolean; theme: CanvasTheme; onToggle: () => void; onView: (prompt: Prompt) => void; onInsert: (payload: InsertAssetPayload) => void }) {
     const label = category === "system" ? "系统提示词" : category;
-    const query = useQuery({
+    const searching = Boolean(keyword.trim());
+    // 浏览时分页加载（每页 50 条，滚动到底自动加载下一页）。
+    const query = useInfiniteQuery({
         queryKey: ["canvas-side-prompt-category", category],
-        queryFn: () => fetchPromptCategory(category),
+        queryFn: ({ pageParam }) => fetchPrompts({ category, page: pageParam, pageSize: PROMPT_PAGE_SIZE }),
+        initialPageParam: 1,
+        getNextPageParam: (lastPage, pages) => (pages.reduce((total, page) => total + page.items.length, 0) < lastPage.total ? pages.length + 1 : undefined),
         enabled: open,
         staleTime: PROMPT_CACHE_TIME,
         gcTime: PROMPT_CACHE_TIME,
         retry: false,
     });
+    // 搜索时才全量拉取分类数据，保证本地过滤结果完整。
+    const fullQuery = useQuery({
+        queryKey: ["canvas-side-prompt-category-full", category],
+        queryFn: () => fetchPromptCategory(category),
+        enabled: open && searching,
+        staleTime: PROMPT_CACHE_TIME,
+        gcTime: PROMPT_CACHE_TIME,
+        retry: false,
+    });
+    const flatPages = useMemo(() => query.data?.pages.flatMap((page) => page.items) || [], [query.data]);
     const items = useMemo(() => {
         const queryText = keyword.trim().toLowerCase();
-        const cachedItems = query.data || [];
-        return queryText ? cachedItems.filter((item) => [item.title, item.prompt].join(" ").toLowerCase().includes(queryText)) : cachedItems;
-    }, [keyword, query.data]);
+        const source = searching ? fullQuery.data || flatPages : flatPages;
+        return queryText ? source.filter((item) => [item.title, item.prompt].join(" ").toLowerCase().includes(queryText)) : source;
+    }, [keyword, searching, fullQuery.data, flatPages]);
+    const loading = query.isLoading || (searching && fullQuery.isLoading);
+    const error = query.isError || (searching && fullQuery.isError);
+    const sentinelRef = useRef<HTMLDivElement | null>(null);
+    useEffect(() => {
+        const node = sentinelRef.current;
+        if (!node || !open || searching || !query.hasNextPage || query.isFetchingNextPage) return;
+        const observer = new IntersectionObserver((entries) => {
+            if (entries.some((entry) => entry.isIntersecting) && !query.isFetchingNextPage) void query.fetchNextPage();
+        }, { rootMargin: "160px" });
+        observer.observe(node);
+        return () => observer.disconnect();
+    }, [open, searching, query.hasNextPage, query.isFetchingNextPage, query.fetchNextPage]);
     return (
         <div>
             <button type="button" onClick={onToggle} className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-semibold opacity-75 transition hover:opacity-100">
@@ -459,12 +486,15 @@ function PromptGroup({ category, keyword, open, theme, onToggle, onView, onInser
             </button>
             {open ? (
                 <div className="space-y-1.5 px-1 pb-2 pt-1">
-                    {query.isLoading ? <div className="flex justify-center py-6"><Spin size="small" /></div> : query.isError ? (
-                        <button type="button" onClick={() => void query.refetch()} className="block w-full py-4 text-center text-xs text-red-500 opacity-80 transition hover:opacity-100">
+                    {loading ? <div className="flex justify-center py-6"><Spin size="small" /></div> : error ? (
+                        <button type="button" onClick={() => { void query.refetch(); if (searching) void fullQuery.refetch(); }} className="block w-full py-4 text-center text-xs text-red-500 opacity-80 transition hover:opacity-100">
                             加载失败，点击重试
                         </button>
                     ) : items.length ? (
-                        items.map((item) => <PromptRow key={item.id} item={item} theme={theme} onView={() => onView(item)} onInsert={() => onInsert({ kind: "text", content: item.prompt, title: item.title })} />)
+                        <>
+                            {items.map((item) => <PromptRow key={item.id} item={item} theme={theme} onView={() => onView(item)} onInsert={() => onInsert({ kind: "text", content: item.prompt, title: item.title })} />)}
+                            {!searching && query.hasNextPage ? <div ref={sentinelRef} className="flex justify-center py-2">{query.isFetchingNextPage ? <Spin size="small" /> : null}</div> : null}
+                        </>
                     ) : (
                         <div className="py-4 text-center text-xs opacity-40">{category === "system" ? "暂无提示词" : "该分类暂无提示词"}</div>
                     )}
