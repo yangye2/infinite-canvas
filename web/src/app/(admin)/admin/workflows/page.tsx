@@ -6,7 +6,7 @@ import { App, Button, Card, Checkbox, Empty, Flex, Form, Input, Modal, Popconfir
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { nanoid } from "nanoid";
 
-import { fetchAdminWorkflowTemplates, saveAdminWorkflowTemplate, deleteAdminWorkflowTemplate, fetchAdminSettings, type AdminWorkflowTemplate, type AdminPublicModelChannelInfo } from "@/services/api/admin";
+import { fetchAdminWorkflowTemplates, saveAdminWorkflowTemplate, deleteAdminWorkflowTemplate, fetchAdminSettings, type AdminWorkflowTemplate, type AdminModelChannel } from "@/services/api/admin";
 import { filterChannelModelsByCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
@@ -203,14 +203,15 @@ export default function AdminWorkflowsPage() {
     const [editingItem, setEditingItem] = useState<Partial<AdminWorkflowTemplate> | null>(null);
     const [data, setData] = useState<WorkflowData>({ ...WORKFLOW_DEFAULTS.single, variables: [] });
     const [form] = Form.useForm();
-    const [publicChannels, setPublicChannels] = useState<AdminPublicModelChannelInfo[]>([]);
+    const [publicChannels, setPublicChannels] = useState<AdminModelChannel[]>([]);
     const [availableModels, setAvailableModels] = useState<string[]>([]);
 
     useEffect(() => {
         if (!token) return;
         fetchAdminSettings(token)
             .then((settings) => {
-                setPublicChannels(settings.public.modelChannel.channels || []);
+                // 渠道模型从私有配置取：公开配置里的 channels 可能未同步，不可靠
+                setPublicChannels((settings.private.channels || []).filter((channel) => channel.enabled !== false && channel.baseUrl && (channel.models || []).length));
                 setAvailableModels(settings.public.modelChannel.availableModels || []);
             })
             .catch(() => undefined);
@@ -340,7 +341,7 @@ export default function AdminWorkflowsPage() {
             )}
 
             <Modal title={editingItem?.id ? "编辑工作流模板" : "新增工作流模板"} open={Boolean(editingItem)} width={900} onCancel={() => setEditingItem(null)} onOk={() => void save()} okText="保存" cancelText="取消" destroyOnHidden confirmLoading={saveMutation.isPending}>
-                <WorkflowTemplateEditor form={form} channelModels={publicChannels} availableModels={availableModels} {...editorExtra} />
+                <WorkflowTemplateEditor form={form} publicChannels={publicChannels} availableModels={availableModels} {...editorExtra} />
             </Modal>
         </div>
     );
@@ -349,7 +350,7 @@ export default function AdminWorkflowsPage() {
 function WorkflowTemplateEditor({
     form,
     data,
-    channelModels,
+    publicChannels,
     availableModels,
     patchData,
     patchVariable,
@@ -357,7 +358,7 @@ function WorkflowTemplateEditor({
 }: {
     form: ReturnType<typeof Form.useForm>[0];
     data: WorkflowData;
-    channelModels: AdminPublicModelChannelInfo[];
+    publicChannels: AdminModelChannel[];
     availableModels: string[];
     patchData: (next: Partial<WorkflowData>) => void;
     patchVariable: (id: string, next: Partial<WorkflowVariable>) => void;
@@ -365,11 +366,11 @@ function WorkflowTemplateEditor({
 }) {
     const patchConfig = (next: Record<string, unknown>) => patchData({ config: { ...data.config, ...next } });
     const patchSeriesConfig = (next: Record<string, unknown>) => patchData({ seriesConfig: { ...data.seriesConfig, ...next } });
-    const enabledChannels = useMemo(() => channelModels.map((channel) => ({ protocol: channel.protocol, models: channel.models || [] })), [channelModels]);
+    const enabledChannels = useMemo(() => publicChannels.map((channel) => ({ protocol: channel.protocol, models: channel.models || [] })), [publicChannels]);
     const allowedModels = availableModels.length ? availableModels : undefined;
     const imageModelOptions = filterChannelModelsByCapability(enabledChannels, "image", allowedModels).map((model) => ({ label: model, value: model }));
     const textModelOptions = filterChannelModelsByCapability(enabledChannels, "text", allowedModels).map((model) => ({ label: model, value: model }));
-    const channelIdForModel = (model: string) => channelModels.find((channel) => (channel.models || []).includes(model))?.id || "";
+    const channelIdForModel = (model: string) => publicChannels.find((channel) => (channel.models || []).includes(model))?.id || "";
 
     return (
         <Form form={form} layout="vertical" requiredMark={false}>
