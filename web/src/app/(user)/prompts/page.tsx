@@ -2,7 +2,7 @@
 
 import { FolderPlus, Search } from "lucide-react";
 import { type UIEvent, useEffect, useState } from "react";
-import { App, Button, Empty, Input, Spin } from "antd";
+import { App, Button, Empty, Input, Spin, Tag } from "antd";
 
 import { PromptCard } from "@/components/prompts/prompt-card";
 import { PromptDetailDialog } from "@/components/prompts/prompt-detail-dialog";
@@ -68,44 +68,27 @@ export default function PromptsPage() {
                         <aside className="space-y-6 self-start lg:sticky lg:top-6">
                             <div>
                                 <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">分类</div>
-                                <div className="thin-scrollbar max-h-72 space-y-0.5 overflow-y-auto pr-1">
-                                    {promptCategoryOptions.map((category) => {
-                                        const active = selectedCategory === category;
-                                        return (
-                                            <button
-                                                key={category}
-                                                type="button"
-                                                onClick={() => setSelectedCategory(category)}
-                                                className={cn(
-                                                    "block w-full truncate rounded-md px-3 py-1.5 text-left text-sm transition",
-                                                    active ? "bg-stone-900 font-medium text-white dark:bg-stone-100 dark:text-stone-900" : "text-stone-600 hover:bg-stone-200/60 dark:text-stone-300 dark:hover:bg-stone-800/60",
-                                                )}
-                                            >
-                                                {category}
-                                            </button>
-                                        );
-                                    })}
+                                <div className="thin-scrollbar flex max-h-72 flex-col items-start gap-1 overflow-y-auto pr-1">
+                                    {promptCategoryOptions.map((category) => (
+                                        <Tag.CheckableTag key={category} checked={selectedCategory === category} className={cn("prompt-filter-tag", selectedCategory === category && "is-active")} onChange={() => setSelectedCategory(category)}>
+                                            {category}
+                                        </Tag.CheckableTag>
+                                    ))}
                                 </div>
                             </div>
                             <div>
                                 <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
-                                <div className="thin-scrollbar max-h-96 space-y-0.5 overflow-y-auto pr-1">
-                                    {promptTags.map((tag) => {
-                                        const active = tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag);
-                                        return (
-                                            <button
-                                                key={tag}
-                                                type="button"
-                                                onClick={() => toggleTag(tag)}
-                                                className={cn(
-                                                    "block w-full truncate rounded-md px-3 py-1.5 text-left text-sm transition",
-                                                    active ? "bg-stone-900 font-medium text-white dark:bg-stone-100 dark:text-stone-900" : "text-stone-600 hover:bg-stone-200/60 dark:text-stone-300 dark:hover:bg-stone-800/60",
-                                                )}
-                                            >
-                                                {tag}
-                                            </button>
-                                        );
-                                    })}
+                                <div className="thin-scrollbar flex max-h-96 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                                    {promptTags.map((tag) => (
+                                        <Tag.CheckableTag
+                                            key={tag}
+                                            checked={tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag)}
+                                            className={cn("prompt-filter-tag", (tag === ALL_PROMPTS_OPTION ? selectedTags.length === 0 : selectedTags.includes(tag)) && "is-active")}
+                                            onChange={() => toggleTag(tag)}
+                                        >
+                                            {tag}
+                                        </Tag.CheckableTag>
+                                    ))}
                                 </div>
                             </div>
                         </aside>
