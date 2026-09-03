@@ -181,7 +181,7 @@ type ImageHistoryLog = {
 
 type GenerationCategory = { id: string; name: string; createdAt: number };
 
-const WORKFLOW_STORE_KEY = "infinite-canvas:creative-workflows";
+const workflowStoreKey = (userId: string) => `infinite-canvas:creative-workflows:${userId || "guest"}`;
 const SERIES_DRAFT_STORE_PREFIX = "infinite-canvas:series-drafts:";
 const CATEGORY_STORE_KEY = "infinite-canvas:image_generation_categories";
 const workflowStore = localforage.createInstance({ name: "infinite-canvas", storeName: "creative_workflows" });
@@ -222,6 +222,7 @@ export function CreativeWorkflowWorkspace({
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const token = useUserStore((state) => state.token);
+    const userId = useUserStore((state) => state.user?.id || "");
     const isUserReady = useUserStore((state) => state.isReady);
     const [workflows, setWorkflows] = useState<CreativeWorkflow[]>([]);
     const [editingWorkflow, setEditingWorkflow] = useState<CreativeWorkflow | null>(null);
@@ -301,10 +302,10 @@ export function CreativeWorkflowWorkspace({
                 const workflows = remote.map(recordToWorkflow).sort((a, b) => b.updatedAt - a.updatedAt);
                 if (workflows.length) {
                     setWorkflows(workflows);
-                    await workflowStore.setItem(WORKFLOW_STORE_KEY, workflows);
+                    await workflowStore.setItem(workflowStoreKey(userId), workflows);
                     return;
                 }
-                const local = await workflowStore.getItem<CreativeWorkflow[]>(WORKFLOW_STORE_KEY);
+                const local = await workflowStore.getItem<CreativeWorkflow[]>(workflowStoreKey(userId));
                 const seed = local?.length ? local.map(normalizeWorkflow) : createStarterWorkflows(effectiveConfig);
                 const saved = await Promise.all(seed.map((workflow) => saveUserWorkflow(token, workflowToRecord(normalizeWorkflow(workflow)))));
                 setWorkflows(saved.map(recordToWorkflow).sort((a, b) => b.updatedAt - a.updatedAt));
@@ -313,20 +314,20 @@ export function CreativeWorkflowWorkspace({
                 // Use local workflows when account sync is unavailable.
             }
         }
-        const stored = await workflowStore.getItem<CreativeWorkflow[]>(WORKFLOW_STORE_KEY);
+        const stored = await workflowStore.getItem<CreativeWorkflow[]>(workflowStoreKey(userId));
         if (stored?.length) {
             setWorkflows(stored.map(normalizeWorkflow).sort((a, b) => b.updatedAt - a.updatedAt));
             return;
         }
         const seed = createStarterWorkflows(effectiveConfig);
         setWorkflows(seed);
-        await workflowStore.setItem(WORKFLOW_STORE_KEY, seed);
+        await workflowStore.setItem(workflowStoreKey(userId), seed);
     };
 
     const saveWorkflows = async (items: CreativeWorkflow[]) => {
         const sorted = [...items].sort((a, b) => b.updatedAt - a.updatedAt);
         setWorkflows(sorted);
-        await workflowStore.setItem(WORKFLOW_STORE_KEY, sorted);
+        await workflowStore.setItem(workflowStoreKey(userId), sorted);
     };
 
     const openRunner = (workflow: CreativeWorkflow) => {
@@ -520,8 +521,14 @@ export function CreativeWorkflowWorkspace({
                         await saveWorkflows(workflows.filter((item) => item.id !== workflow.id));
                     }
                 } catch (error) {
-                    await saveWorkflows(workflows.filter((item) => item.id !== workflow.id));
-                    message.warning(error instanceof Error && error.message === "接口不存在" ? "工作流同步接口不可用，已先从本地移除。请重启后端。" : "远端删除失败，已先从本地移除");
+                    // 后端明确拒绝（如「只能删除自己的工作流」）时保留卡片并透传原因；仅接口不可用时才回退为本地移除。
+                    const reason = error instanceof Error ? error.message : "";
+                    if (reason.includes("接口不存在") || reason.includes("接口连接失败")) {
+                        await saveWorkflows(workflows.filter((item) => item.id !== workflow.id));
+                        message.warning("工作流同步接口不可用，已先从本地移除。请重启后端。");
+                    } else {
+                        message.error(reason || "远端删除失败，请稍后重试");
+                    }
                 }
                 if (runningWorkflow?.id === workflow.id) setRunningWorkflow(null);
             },
@@ -873,7 +880,7 @@ export function CreativeWorkflowWorkspace({
             const finishedAt = Date.now();
             setWorkflows((value) => {
                 const next = value.map((item) => (item.id === workflow.id ? { ...item, lastRunAt: finishedAt, updatedAt: finishedAt } : item)).sort((a, b) => b.updatedAt - a.updatedAt);
-                void workflowStore.setItem(WORKFLOW_STORE_KEY, next);
+                void workflowStore.setItem(workflowStoreKey(userId), next);
                 return next;
             });
             if (token && workflowSyncEnabledRef.current && workflow.editable !== false) void saveUserWorkflow(token, workflowToRecord({ ...workflow, lastRunAt: finishedAt, updatedAt: finishedAt })).catch(() => {});
@@ -1330,6 +1337,11 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
                         <Tag className="m-0" color={workflow.scope === "public" ? "blue" : undefined}>
                             {workflow.scope === "public" ? "公开" : "个人"}
                         </Tag>
+                        {!editable && (
+                            <Tag className="m-0" color={workflow.ownerUserId ? "orange" : "gold"}>
+                                {workflow.ownerUserId ? "来自他人" : "平台模板"}
+                            </Tag>
+                        )}
                     </div>
                 </div>
                 <Button type="primary" size="small" icon={<Play className="size-3.5" />} onClick={onRun}>
