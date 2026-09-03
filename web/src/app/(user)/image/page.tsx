@@ -1635,6 +1635,7 @@ function ResultsPanel({
     const { message } = App.useApp();
     const [creatingCategory, setCreatingCategory] = useState(false);
     const [categoryName, setCategoryName] = useState("");
+    const [promptExpanded, setPromptExpanded] = useState(false);
     const liveImageIds = new Set(results.map((result) => result.image?.id).filter((id): id is string => Boolean(id)));
     const liveLogIds = new Set(results.flatMap(imageResultIdentityKeys));
     const baseVisibleLogs = logs.filter((log) => !imageLogIdentityKeys(log).some((key) => liveLogIds.has(key)) && !log.images.some((image) => liveImageIds.has(image.id)));
@@ -1694,6 +1695,9 @@ function ResultsPanel({
                     <Button size="small" icon={<Plus className="size-3.5" />} onClick={resultViewMode === "category" ? () => setCreatingCategory(true) : onCreateSession}>
                         {resultViewMode === "category" ? "新建分类" : "新建"}
                     </Button>
+                    <Button size="small" icon={promptExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />} disabled={!shouldShowGrid} onClick={() => setPromptExpanded((value) => !value)}>
+                        {promptExpanded ? "全部收起" : "全部展开"}
+                    </Button>
                     <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!visibleLogs.length} onClick={toggleVisibleLogs}>
                         {allVisibleLogsSelected ? "取消" : "全选"}
                     </Button>
@@ -1706,11 +1710,11 @@ function ResultsPanel({
                 <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                     {results.map((result, index) =>
                         result.status === "success" && result.image ? (
-                            <ResultImageCard key={result.id} result={result} image={result.image} index={index} onCopyPrompt={onCopyPrompt} onEdit={onEdit} onDownload={onDownload} onSaveAsset={onSaveAsset} syncing={syncingImageIds.includes(result.image.id)} onSync={(image) => onSyncResult(result.id, image, index)} />
+                            <ResultImageCard key={result.id} result={result} image={result.image} index={index} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} onEdit={onEdit} onDownload={onDownload} onSaveAsset={onSaveAsset} syncing={syncingImageIds.includes(result.image.id)} onSync={(image) => onSyncResult(result.id, image, index)} />
                         ) : result.status === "failed" ? (
-                            <FailedImageCard key={result.id} result={result} error={result.error || "生成失败"} onCopyPrompt={onCopyPrompt} onRetry={() => onRetry(result)} />
+                            <FailedImageCard key={result.id} result={result} error={result.error || "生成失败"} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} onRetry={() => onRetry(result)} />
                         ) : (
-                            <PendingImageCard key={result.id} result={result} now={now} onCopyPrompt={onCopyPrompt} />
+                            <PendingImageCard key={result.id} result={result} now={now} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} />
                         ),
                     )}
                     {resultViewMode === "category" ? (
@@ -1728,6 +1732,7 @@ function ResultsPanel({
                             log={log}
                             categories={categories}
                             index={index}
+                            globalExpanded={promptExpanded}
                             selected={selectedLogIds.includes(log.id)}
                             active={activeLogId === log.id}
                             onSelectedChange={(checked) => onSelectedLogIdsChange(checked ? [...selectedLogIds, log.id] : selectedLogIds.filter((id) => id !== log.id))}
@@ -1863,6 +1868,7 @@ function ResultImageCard({
     result,
     image,
     index,
+    globalExpanded,
     onCopyPrompt,
     onEdit,
     onDownload,
@@ -1873,6 +1879,7 @@ function ResultImageCard({
     result: GenerationResult;
     image: GeneratedImage;
     index: number;
+    globalExpanded: boolean;
     onCopyPrompt: (text: string) => void | Promise<void>;
     onEdit: (image: GeneratedImage, index: number) => void;
     onDownload: (image: GeneratedImage, index: number) => void;
@@ -1890,7 +1897,7 @@ function ResultImageCard({
                 <ReferenceThumbnailOverlay references={result.references} className="left-1.5 top-1.5" />
                 <Image src={image.dataUrl} alt={`生成结果 ${index + 1}`} className="aspect-[4/3] object-cover" />
             </div>
-            <TaskInfo result={result} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo result={result} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
             <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-t border-stone-200 px-2.5 py-2 dark:border-stone-800">
                 <div className="flex min-w-0 flex-wrap gap-x-1.5 gap-y-1 text-[10px] text-stone-500 dark:text-stone-400">
                     <span>
@@ -1910,7 +1917,7 @@ function ResultImageCard({
     );
 }
 
-function PendingImageCard({ result, now, onCopyPrompt }: { result: GenerationResult; now: number; onCopyPrompt: (text: string) => void | Promise<void> }) {
+function PendingImageCard({ result, now, globalExpanded, onCopyPrompt }: { result: GenerationResult; now: number; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void> }) {
     return (
         <div className="overflow-hidden rounded-lg border border-dashed border-stone-300 bg-stone-50 dark:border-stone-700 dark:bg-stone-900">
             <div className="relative aspect-[4/3]">
@@ -1927,12 +1934,12 @@ function PendingImageCard({ result, now, onCopyPrompt }: { result: GenerationRes
                     <span className="rounded-full bg-white/80 px-2 py-1 text-xs text-stone-600 shadow-sm dark:bg-stone-950/70 dark:text-stone-300">{formatDuration(Math.max(0, now - result.createdAt))}</span>
                 </div>
             </div>
-            <TaskInfo result={{ ...result, durationMs: Math.max(0, now - result.createdAt) }} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo result={{ ...result, durationMs: Math.max(0, now - result.createdAt) }} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
         </div>
     );
 }
 
-function FailedImageCard({ result, error, onCopyPrompt, onRetry }: { result: GenerationResult; error: string; onCopyPrompt: (text: string) => void | Promise<void>; onRetry: () => void }) {
+function FailedImageCard({ result, error, globalExpanded, onCopyPrompt, onRetry }: { result: GenerationResult; error: string; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void>; onRetry: () => void }) {
     const [detailOpen, setDetailOpen] = useState(false);
     const detail = result.errorDetail || error;
     return (
@@ -1945,7 +1952,7 @@ function FailedImageCard({ result, error, onCopyPrompt, onRetry }: { result: Gen
                     {error}
                 </Typography.Paragraph>
             </div>
-            <TaskInfo result={result} error={error} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo result={result} error={error} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
             <div className="flex justify-end gap-2 border-t border-red-200 p-3 dark:border-red-950">
                 <Button size="small" onClick={() => setDetailOpen(true)}>
                     详情
@@ -1961,8 +1968,9 @@ function FailedImageCard({ result, error, onCopyPrompt, onRetry }: { result: Gen
     );
 }
 
-function TaskInfo({ result, error, onCopyPrompt }: { result: GenerationResult; error?: string; onCopyPrompt: (text: string) => void | Promise<void> }) {
-    const [expanded, setExpanded] = useState(false);
+function TaskInfo({ result, error, globalExpanded, onCopyPrompt }: { result: GenerationResult; error?: string; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void> }) {
+    const [expanded, setExpanded] = useState(globalExpanded);
+    useEffect(() => setExpanded(globalExpanded), [globalExpanded]);
 
     return (
         <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 text-xs text-stone-500 dark:border-stone-800 dark:text-stone-400">
@@ -2000,6 +2008,7 @@ function HistoryLogCard({
     log,
     categories,
     index,
+    globalExpanded,
     selected,
     active,
     onSelectedChange,
@@ -2019,6 +2028,7 @@ function HistoryLogCard({
     log: GenerationLog;
     categories: GenerationCategory[];
     index: number;
+    globalExpanded: boolean;
     selected: boolean;
     active: boolean;
     onSelectedChange: (checked: boolean) => void;
@@ -2037,7 +2047,8 @@ function HistoryLogCard({
 }) {
     const displayImages = log.images.filter((image) => Boolean(image.dataUrl));
     const firstImage = displayImages[0];
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(globalExpanded);
+    useEffect(() => setExpanded(globalExpanded), [globalExpanded]);
     const [categoryOpen, setCategoryOpen] = useState(false);
     const [categoryName, setCategoryName] = useState("");
     const [detailOpen, setDetailOpen] = useState(false);

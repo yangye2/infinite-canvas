@@ -1820,6 +1820,7 @@ function ResultsPanel({
     const totalCount = visibleResults.length + visibleLogs.length;
     const allSelected = Boolean(visibleLogs.length) && visibleLogs.every((log) => selectedLogIds.includes(log.id));
     const toggleVisibleLogs = () => onSelectedLogIdsChange(allSelected ? selectedLogIds.filter((id) => !visibleLogs.some((log) => log.id === id)) : Array.from(new Set([...selectedLogIds, ...visibleLogs.map((log) => log.id)])));
+    const [promptExpanded, setPromptExpanded] = useState(false);
 
     return (
         <section className={`thin-scrollbar rounded-lg border border-stone-200 bg-card p-4 shadow-sm dark:border-stone-800 lg:min-h-0 lg:overflow-y-auto lg:p-5 ${className}`}>
@@ -1832,15 +1833,16 @@ function ResultsPanel({
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                     <Button size="small" icon={<Plus className="size-3.5" />} onClick={onCreateSession}>新建</Button>
+                    <Button size="small" icon={promptExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />} disabled={!totalCount} onClick={() => setPromptExpanded((value) => !value)}>{promptExpanded ? "全部收起" : "全部展开"}</Button>
                     <Button size="small" icon={<CheckSquare className="size-3.5" />} disabled={!visibleLogs.length} onClick={toggleVisibleLogs}>{allSelected ? "取消" : "全选"}</Button>
                     <Button size="small" danger icon={<Trash2 className="size-3.5" />} disabled={!selectedLogIds.length} onClick={onDeleteSelected}>删除</Button>
                 </div>
             </div>
             {totalCount ? (
                 <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
-                    {visibleResults.map((result, index) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} result={result} video={result.video} index={index} syncing={syncingVideoIds.includes(result.video.id)} onCopyPrompt={onCopyPrompt} onDownload={onDownload} onSync={(video) => onSyncResult(result.id, video, index)} onSaveAsset={onSaveAsset} /> : result.status === "failed" ? <FailedVideoCard key={result.id} result={result} error={result.error || "生成失败"} onCopyPrompt={onCopyPrompt} onPreview={() => onPreviewResult(result)} onRetry={() => onRetryResult(result)} /> : <PendingVideoCard key={result.id} result={result} now={now} onCopyPrompt={onCopyPrompt} />))}
+                    {visibleResults.map((result, index) => (result.status === "success" && result.video ? <ResultVideoCard key={result.id} result={result} video={result.video} index={index} syncing={syncingVideoIds.includes(result.video.id)} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} onDownload={onDownload} onSync={(video) => onSyncResult(result.id, video, index)} onSaveAsset={onSaveAsset} /> : result.status === "failed" ? <FailedVideoCard key={result.id} result={result} error={result.error || "生成失败"} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} onPreview={() => onPreviewResult(result)} onRetry={() => onRetryResult(result)} /> : <PendingVideoCard key={result.id} result={result} now={now} globalExpanded={promptExpanded} onCopyPrompt={onCopyPrompt} />))}
                     {visibleLogs.map((log, index) => (
-                        <HistoryLogCard key={log.id} log={log} index={index} selected={selectedLogIds.includes(log.id)} active={activeLogId === log.id} syncing={Boolean(log.video && syncingVideoIds.includes(log.video.id))} onSelectedChange={(checked) => onSelectedLogIdsChange(checked ? [...selectedLogIds, log.id] : selectedLogIds.filter((id) => id !== log.id))} onDelete={() => onDeleteLog(log)} onPreview={() => onPreviewLog(log)} onRetry={() => onRetryLog(log)} onCopyPrompt={onCopyPrompt} onDownload={onDownload} onSync={(video) => onSyncLog(log, video, index)} onSaveAsset={onSaveAsset} />
+                        <HistoryLogCard key={log.id} log={log} index={index} globalExpanded={promptExpanded} selected={selectedLogIds.includes(log.id)} active={activeLogId === log.id} syncing={Boolean(log.video && syncingVideoIds.includes(log.video.id))} onSelectedChange={(checked) => onSelectedLogIdsChange(checked ? [...selectedLogIds, log.id] : selectedLogIds.filter((id) => id !== log.id))} onDelete={() => onDeleteLog(log)} onPreview={() => onPreviewLog(log)} onRetry={() => onRetryLog(log)} onCopyPrompt={onCopyPrompt} onDownload={onDownload} onSync={(video) => onSyncLog(log, video, index)} onSaveAsset={onSaveAsset} />
                     ))}
                 </div>
             ) : (
@@ -1857,7 +1859,7 @@ function HistoryIcon() {
     return <History className="size-4 shrink-0 text-stone-400" />;
 }
 
-function ResultVideoCard({ result, video, index, syncing, onCopyPrompt, onDownload, onSync, onSaveAsset }: { result: GenerationResult; video: GeneratedVideo; index: number; syncing: boolean; onCopyPrompt: (text: string) => void | Promise<void>; onDownload: (video: GeneratedVideo) => void; onSync: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
+function ResultVideoCard({ result, video, index, syncing, globalExpanded, onCopyPrompt, onDownload, onSync, onSaveAsset }: { result: GenerationResult; video: GeneratedVideo; index: number; syncing: boolean; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void>; onDownload: (video: GeneratedVideo) => void; onSync: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
     return (
         <div className="overflow-hidden rounded-lg border border-stone-200 bg-background dark:border-stone-800">
             <div className="relative aspect-video bg-black">
@@ -1868,13 +1870,13 @@ function ResultVideoCard({ result, video, index, syncing, onCopyPrompt, onDownlo
                 <ReferenceThumbnailOverlay references={result.references} className="left-1.5 top-1.5" />
                 <video src={video.url} controls className="size-full object-contain" />
             </div>
-            <TaskInfo item={result} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo item={result} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
             <VideoMetaBar video={video} index={index} syncing={syncing} onDownload={onDownload} onSync={onSync} onSaveAsset={onSaveAsset} />
         </div>
     );
 }
 
-function PendingVideoCard({ result, now, onCopyPrompt }: { result: GenerationResult; now: number; onCopyPrompt: (text: string) => void | Promise<void> }) {
+function PendingVideoCard({ result, now, globalExpanded, onCopyPrompt }: { result: GenerationResult; now: number; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void> }) {
     const progress = typeof result.progress === "number" ? Math.max(0, Math.min(100, Math.floor(result.progress))) : null;
     const durationMs = Math.max(0, now - result.createdAt);
     return (
@@ -1898,12 +1900,12 @@ function PendingVideoCard({ result, now, onCopyPrompt }: { result: GenerationRes
                     </div>
                 ) : null}
             </div>
-            <TaskInfo item={{ ...result, durationMs }} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo item={{ ...result, durationMs }} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
         </div>
     );
 }
 
-function FailedVideoCard({ result, error, onCopyPrompt, onPreview, onRetry }: { result: GenerationResult; error: string; onCopyPrompt: (text: string) => void | Promise<void>; onPreview: () => void; onRetry: () => void }) {
+function FailedVideoCard({ result, error, globalExpanded, onCopyPrompt, onPreview, onRetry }: { result: GenerationResult; error: string; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void>; onPreview: () => void; onRetry: () => void }) {
     const [detailOpen, setDetailOpen] = useState(false);
     const detail = result.errorDetail || error;
     return (
@@ -1916,7 +1918,7 @@ function FailedVideoCard({ result, error, onCopyPrompt, onPreview, onRetry }: { 
                     {error}
                 </Typography.Paragraph>
             </div>
-            <TaskInfo item={result} error={error} onCopyPrompt={onCopyPrompt} />
+            <TaskInfo item={result} error={error} globalExpanded={globalExpanded} onCopyPrompt={onCopyPrompt} />
             <div className="flex justify-between gap-2 border-t border-red-200 p-3 dark:border-red-950">
                 <Button size="small" onClick={onPreview}>载入</Button>
                 <div className="flex gap-2">
@@ -1931,8 +1933,9 @@ function FailedVideoCard({ result, error, onCopyPrompt, onPreview, onRetry }: { 
     );
 }
 
-function HistoryLogCard({ log, index, selected, active, syncing, onSelectedChange, onDelete, onPreview, onRetry, onCopyPrompt, onDownload, onSync, onSaveAsset }: { log: GenerationLog; index: number; selected: boolean; active: boolean; syncing: boolean; onSelectedChange: (checked: boolean) => void; onDelete: () => void; onPreview: () => void; onRetry: () => void; onCopyPrompt: (text: string) => void | Promise<void>; onDownload: (video: GeneratedVideo) => void; onSync: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
-    const [expanded, setExpanded] = useState(false);
+function HistoryLogCard({ log, index, selected, active, syncing, globalExpanded, onSelectedChange, onDelete, onPreview, onRetry, onCopyPrompt, onDownload, onSync, onSaveAsset }: { log: GenerationLog; index: number; selected: boolean; active: boolean; syncing: boolean; globalExpanded: boolean; onSelectedChange: (checked: boolean) => void; onDelete: () => void; onPreview: () => void; onRetry: () => void; onCopyPrompt: (text: string) => void | Promise<void>; onDownload: (video: GeneratedVideo) => void; onSync: (video: GeneratedVideo) => void; onSaveAsset: (video: GeneratedVideo) => void }) {
+    const [expanded, setExpanded] = useState(globalExpanded);
+    useEffect(() => setExpanded(globalExpanded), [globalExpanded]);
     const [detailOpen, setDetailOpen] = useState(false);
     return (
         <div className={`overflow-hidden rounded-lg border bg-background dark:bg-stone-950 ${active ? "border-stone-900 dark:border-stone-100" : "border-stone-200 dark:border-stone-800"}`}>
@@ -2000,8 +2003,9 @@ function VideoSourceTag({ video }: { video: GeneratedVideo }) {
     return <Tag className="m-0 text-[10px]" color={video.storageKey ? "default" : "gold"}>{video.storageKey ? "本地缓存" : "AI 临时URL"}</Tag>;
 }
 
-function TaskInfo({ item, error, onCopyPrompt }: { item: GenerationResult; error?: string; onCopyPrompt: (text: string) => void | Promise<void> }) {
-    const [expanded, setExpanded] = useState(false);
+function TaskInfo({ item, error, globalExpanded, onCopyPrompt }: { item: GenerationResult; error?: string; globalExpanded: boolean; onCopyPrompt: (text: string) => void | Promise<void> }) {
+    const [expanded, setExpanded] = useState(globalExpanded);
+    useEffect(() => setExpanded(globalExpanded), [globalExpanded]);
     return (
         <div className="space-y-2 border-t border-stone-200 px-3 py-2.5 text-xs text-stone-500 dark:border-stone-800 dark:text-stone-400">
             <div className="rounded-md bg-stone-50 p-2 dark:bg-stone-900">
