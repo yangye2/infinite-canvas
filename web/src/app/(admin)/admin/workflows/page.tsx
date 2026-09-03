@@ -6,7 +6,8 @@ import { App, Button, Card, Checkbox, Empty, Flex, Form, Input, Modal, Popconfir
 import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { nanoid } from "nanoid";
 
-import { fetchAdminWorkflowTemplates, saveAdminWorkflowTemplate, deleteAdminWorkflowTemplate, type AdminWorkflowTemplate } from "@/services/api/admin";
+import { fetchAdminWorkflowTemplates, saveAdminWorkflowTemplate, deleteAdminWorkflowTemplate, fetchAdminSettings, type AdminWorkflowTemplate, type AdminPublicModelChannelInfo } from "@/services/api/admin";
+import { filterChannelModelsByCapability } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 
 type WorkflowVariableType = "text" | "textarea" | "number" | "select" | "boolean";
@@ -202,6 +203,18 @@ export default function AdminWorkflowsPage() {
     const [editingItem, setEditingItem] = useState<Partial<AdminWorkflowTemplate> | null>(null);
     const [data, setData] = useState<WorkflowData>({ ...WORKFLOW_DEFAULTS.single, variables: [] });
     const [form] = Form.useForm();
+    const [publicChannels, setPublicChannels] = useState<AdminPublicModelChannelInfo[]>([]);
+    const [availableModels, setAvailableModels] = useState<string[]>([]);
+
+    useEffect(() => {
+        if (!token) return;
+        fetchAdminSettings(token)
+            .then((settings) => {
+                setPublicChannels(settings.public.modelChannel.channels || []);
+                setAvailableModels(settings.public.modelChannel.availableModels || []);
+            })
+            .catch(() => undefined);
+    }, [token]);
 
     const templatesQuery = useQuery({
         queryKey: ["admin", "workflow-templates", token],
@@ -327,7 +340,7 @@ export default function AdminWorkflowsPage() {
             )}
 
             <Modal title={editingItem?.id ? "编辑工作流模板" : "新增工作流模板"} open={Boolean(editingItem)} width={900} onCancel={() => setEditingItem(null)} onOk={() => void save()} okText="保存" cancelText="取消" destroyOnHidden confirmLoading={saveMutation.isPending}>
-                <WorkflowTemplateEditor form={form} {...editorExtra} />
+                <WorkflowTemplateEditor form={form} channelModels={publicChannels} availableModels={availableModels} {...editorExtra} />
             </Modal>
         </div>
     );
@@ -336,18 +349,27 @@ export default function AdminWorkflowsPage() {
 function WorkflowTemplateEditor({
     form,
     data,
+    channelModels,
+    availableModels,
     patchData,
     patchVariable,
     removeVariable,
 }: {
     form: ReturnType<typeof Form.useForm>[0];
     data: WorkflowData;
+    channelModels: AdminPublicModelChannelInfo[];
+    availableModels: string[];
     patchData: (next: Partial<WorkflowData>) => void;
     patchVariable: (id: string, next: Partial<WorkflowVariable>) => void;
     removeVariable: (id: string) => void;
 }) {
     const patchConfig = (next: Record<string, unknown>) => patchData({ config: { ...data.config, ...next } });
     const patchSeriesConfig = (next: Record<string, unknown>) => patchData({ seriesConfig: { ...data.seriesConfig, ...next } });
+    const enabledChannels = useMemo(() => channelModels.map((channel) => ({ protocol: channel.protocol, models: channel.models || [] })), [channelModels]);
+    const allowedModels = availableModels.length ? availableModels : undefined;
+    const imageModelOptions = filterChannelModelsByCapability(enabledChannels, "image", allowedModels).map((model) => ({ label: model, value: model }));
+    const textModelOptions = filterChannelModelsByCapability(enabledChannels, "text", allowedModels).map((model) => ({ label: model, value: model }));
+    const channelIdForModel = (model: string) => channelModels.find((channel) => (channel.models || []).includes(model))?.id || "";
 
     return (
         <Form form={form} layout="vertical" requiredMark={false}>
@@ -401,6 +423,30 @@ function WorkflowTemplateEditor({
                 </Card>
 
                 <Card size="small" title="提示词与生成配置" style={{ marginBottom: 12 }}>
+                    <Flex gap={8} wrap="wrap" style={{ marginBottom: 8 }}>
+                        <Select
+                            style={{ minWidth: 240 }}
+                            size="small"
+                            showSearch
+                            allowClear
+                            placeholder="图片生成模型（留空跟随用户默认）"
+                            value={(String(data.config.imageModel || data.config.model || "") || undefined) as string | undefined}
+                            options={imageModelOptions}
+                            onChange={(model) => patchConfig(model ? { imageModel: model, model, imageChannelId: channelIdForModel(model) } : { imageModel: "", model: "", imageChannelId: "" })}
+                        />
+                        {data.mode === "multi_image_series" ? (
+                            <Select
+                                style={{ minWidth: 240 }}
+                                size="small"
+                                showSearch
+                                allowClear
+                                placeholder="提示词规划模型（留空跟随用户默认）"
+                                value={(String(data.seriesConfig.promptModel || "") || undefined) as string | undefined}
+                                options={textModelOptions}
+                                onChange={(model) => patchSeriesConfig(model ? { promptModel: model, promptChannelId: channelIdForModel(model) } : { promptModel: "", promptChannelId: "" })}
+                            />
+                        ) : null}
+                    </Flex>
                     <div style={{ marginBottom: 8 }}>
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>用户提示词模板（用 {"{{变量名}}"} 引用变量）</Typography.Text>
                         <Input.TextArea rows={6} value={String(data.config.promptTemplate || "")} onChange={(e) => patchConfig({ promptTemplate: e.target.value })} />
