@@ -23,6 +23,24 @@ export enum CanvasNodeType {
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+export type CanvasNodeText = {
+    id: string;
+    status: CanvasNodeStatus;
+    errorDetails?: string;
+    content: string;
+};
+
+export type CanvasNodeImage = {
+    id: string;
+    status: CanvasNodeStatus;
+    errorDetails?: string;
+    content: string;
+    storageKey?: string;
+    naturalWidth?: number;
+    naturalHeight?: number;
+    bytes?: number;
+    mimeType?: string;
+};
 
 export type CameraControlOptions = {
     enabled: boolean;
@@ -46,8 +64,13 @@ export type CanvasNodeMetadata = {
     model?: string;
     channelId?: string;
     size?: string;
+    background?: string;
     quality?: string;
     count?: number;
+    textCount?: number;
+    texts?: CanvasNodeText[];
+    primaryTextId?: string;
+    images?: CanvasNodeImage[];
     seconds?: string;
     vquality?: string;
     mode?: string;

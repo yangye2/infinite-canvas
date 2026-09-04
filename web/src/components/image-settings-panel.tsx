@@ -43,7 +43,7 @@ export const imageSizeOptions = aspectOptions.map((item) => ({
 
 type ImageSettingsPanelProps = {
     config: AiConfig;
-    onConfigChange: (key: "quality" | "size" | "count", value: string) => void;
+    onConfigChange: (key: "quality" | "size" | "count" | "background", value: string) => void;
     theme: CanvasTheme;
     showTitle?: boolean;
     showSize?: boolean;
@@ -154,6 +154,10 @@ export function ImageSettingsPanel({ config, onConfigChange, theme, showTitle = 
                         </div>
                     </div>
                 ) : null}
+                <div className="flex items-center justify-between gap-3">
+                    <SettingTitle color={theme.node.muted}>透明背景</SettingTitle>
+                    <Switch checked={config.background === "transparent"} onChange={(checked) => onConfigChange("background", checked ? "transparent" : "")} />
+                </div>
             </div>
         </ImageSettingsTheme>
     );

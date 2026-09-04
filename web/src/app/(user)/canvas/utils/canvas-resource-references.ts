@@ -23,8 +23,8 @@ export function assistantReferenceContentFromNode(node: CanvasNodeData): Partial
         return text ? { text } : null;
     }
     if (!content) return null;
-    if (isCanvasImageNodeType(node.type)) return { dataUrl: content, url: undefined, storageKey: node.metadata.storageKey, mimeType: node.metadata.mimeType };
-    if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) return { dataUrl: undefined, url: content, storageKey: node.metadata.storageKey, mimeType: node.metadata.mimeType };
+    if (isCanvasImageNodeType(node.type)) return { dataUrl: content, url: undefined, storageKey: node.metadata?.storageKey, mimeType: node.metadata?.mimeType };
+    if (node.type === CanvasNodeType.Video || node.type === CanvasNodeType.Audio) return { dataUrl: undefined, url: content, storageKey: node.metadata?.storageKey, mimeType: node.metadata?.mimeType };
     return null;
 }
 
@@ -61,10 +61,11 @@ export function getGenerationResourceNodes(nodeId: string, nodes: CanvasNodeData
 }
 
 function getContextResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
-    return connections
+    const directNodes = connections
         .filter((connection) => connection.toNodeId === nodeId)
         .map((connection) => nodes.find((node) => node.id === connection.fromNodeId))
-        .filter((node): node is CanvasNodeData => Boolean(node && isCanvasReferenceNode(node)));
+        .filter((node): node is CanvasNodeData => Boolean(node));
+    return directNodes.flatMap((node) => node.type === CanvasNodeType.Group ? expandGroupResources(node, nodes) : isCanvasReferenceNode(node) ? [node] : []);
 }
 
 function getConnectedConfigResourceNodes(nodeId: string, nodes: CanvasNodeData[], connections: CanvasConnection[]) {
@@ -112,4 +113,12 @@ function resourceKind(node: CanvasNodeData): CanvasResourceKind | null {
     if (node.type === CanvasNodeType.Audio && node.metadata?.content) return "audio";
     if (node.type === CanvasNodeType.Text && (node.metadata?.content || node.metadata?.prompt)) return "text";
     return null;
+}
+
+function expandGroupResources(group: CanvasNodeData, nodes: CanvasNodeData[], visited = new Set<string>()): CanvasNodeData[] {
+    if (visited.has(group.id)) return [];
+    const nextVisited = new Set(visited).add(group.id);
+    return nodes
+        .filter((node) => node.metadata?.groupId === group.id)
+        .flatMap((node) => node.type === CanvasNodeType.Group ? expandGroupResources(node, nodes, nextVisited) : isCanvasReferenceNode(node) ? [node] : []);
 }

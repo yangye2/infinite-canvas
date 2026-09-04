@@ -271,8 +271,7 @@ func runCanvasImageTask(task model.CanvasImageTask, user model.AuthUser, body []
 		saveFailedCanvasImageTask(task, message, string(payload))
 		return
 	}
-	collectAll := isKIESeedreamLayerDecompositionModel(task.Model)
-	imageURLs, mimeType, bytes, err := imageURLsFromAIResponse(payload, responseContentType, collectAll, task.Endpoint == "/chat/completions")
+	imageURLs, mimeType, bytes, err := imageURLsFromAIResponse(payload, responseContentType, true, task.Endpoint == "/chat/completions")
 	if err != nil {
 		saveFailedCanvasImageTask(task, err.Error(), string(payload))
 		return
@@ -282,9 +281,7 @@ func runCanvasImageTask(task model.CanvasImageTask, user model.AuthUser, body []
 	task.CompletedAt = taskTime()
 	task.ResponseBody = string(payload)
 	task.ImageURL = imageURLs[0]
-	if collectAll {
-		task.ImageURLs = imageURLs
-	}
+	task.ImageURLs = imageURLs
 	task.StorageKey = ""
 	task.MimeType = mimeType
 	task.Bytes = bytes

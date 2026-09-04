@@ -21,6 +21,7 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
     const publicSettings = useConfigStore((state) => state.publicSettings);
     const channelMode = useConfigStore((state) => state.config.channelMode);
     const updateConfig = useConfigStore((state) => state.updateConfig);
+    const importChannelCredentials = useConfigStore((state) => state.importChannelCredentials);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const isLoginPage = pathname === "/login" || pathname === "/admin/login";
     const adminRemoteTokenRef = useRef("");
@@ -87,11 +88,13 @@ export function ClientRootInit({ children }: { children: ReactNode }) {
             message.error("后台未允许用户自定义渠道，请联系管理员进行配置");
             return;
         }
-        updateConfig("channelMode", "local");
-        if (baseUrl) updateConfig("baseUrl", baseUrl);
-        if (apiKey) updateConfig("apiKey", apiKey);
+        const result = importChannelCredentials({ baseUrl, apiKey });
+        if (result.status === "created") message.success(`已新增渠道「${result.channelName}」，未修改已有渠道`);
+        else if (result.status === "updated") message.success(`已更新渠道「${result.channelName}」的连接配置`);
+        else if (result.status === "missing-base-url") message.error("导入链接缺少 Base URL，未修改任何配置");
+        else message.error("导入链接的 Base URL 无效，未修改任何配置");
         openConfigDialog(false);
-    }, [message, openConfigDialog, publicSettings, updateConfig]);
+    }, [importChannelCredentials, message, openConfigDialog, publicSettings]);
 
     return <>{children}</>;
 }

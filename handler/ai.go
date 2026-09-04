@@ -362,6 +362,7 @@ func summarizeAIRequest(body []byte, contentType string) string {
 	}
 	var payload any
 	if err := json.Unmarshal(body, &payload); err == nil {
+		redactSensitiveAIFields(&payload)
 		redactLargeImages(&payload)
 		if encoded, err := json.MarshalIndent(payload, "", "  "); err == nil {
 			return string(encoded)
@@ -374,7 +375,15 @@ func summarizeQueryParams(values map[string][]string) string {
 	if len(values) == 0 {
 		return ""
 	}
-	encoded, _ := json.MarshalIndent(values, "", "  ")
+	safeValues := make(map[string][]string, len(values))
+	for key, items := range values {
+		if isSensitiveAIField(key) {
+			safeValues[key] = []string{"[redacted]"}
+		} else {
+			safeValues[key] = items
+		}
+	}
+	encoded, _ := json.MarshalIndent(safeValues, "", "  ")
 	return string(encoded)
 }
 
@@ -388,7 +397,15 @@ func summarizeMultipartAIRequest(body []byte, contentType string) string {
 		return "multipart/form-data"
 	}
 	defer form.RemoveAll()
-	summary := map[string]any{"fields": form.Value}
+	fields := make(map[string][]string, len(form.Value))
+	for key, values := range form.Value {
+		if isSensitiveAIField(key) {
+			fields[key] = []string{"[redacted]"}
+		} else {
+			fields[key] = values
+		}
+	}
+	summary := map[string]any{"fields": fields}
 	files := []map[string]any{}
 	for field, headers := range form.File {
 		for _, header := range headers {
@@ -442,6 +459,38 @@ func redactLargeImages(value *any) {
 			typed[index] = item
 		}
 	}
+}
+
+func redactSensitiveAIFields(value *any) {
+	switch typed := (*value).(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if isSensitiveAIField(key) {
+				typed[key] = "[redacted]"
+				continue
+			}
+			redactSensitiveAIFields(&item)
+			typed[key] = item
+		}
+	case []any:
+		for index, item := range typed {
+			redactSensitiveAIFields(&item)
+			typed[index] = item
+		}
+	}
+}
+
+func isSensitiveAIField(key string) bool {
+	key = strings.NewReplacer("-", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(key)))
+	return strings.Contains(key, "api_key") ||
+		strings.Contains(key, "apikey") ||
+		strings.Contains(key, "authorization") ||
+		strings.Contains(key, "access_token") ||
+		strings.Contains(key, "refresh_token") ||
+		strings.Contains(key, "client_secret") ||
+		strings.Contains(key, "secret_key") ||
+		key == "password" ||
+		key == "token"
 }
 
 func looksLikeBase64(value string) bool {

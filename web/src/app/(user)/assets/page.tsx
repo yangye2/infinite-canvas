@@ -8,6 +8,8 @@ import { saveAs } from "file-saver";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
+import { getImageBlob, resolveImageUrl } from "@/services/image-storage";
+import { getMediaBlob, resolveMediaUrl } from "@/services/file-storage";
 import { useAssetStore, type Asset, type AssetKind } from "@/stores/use-asset-store";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 import { AssetFormModal } from "@/components/assets/asset-form-modal";
@@ -71,11 +73,25 @@ export default function AssetsPage() {
         copyText(asset.data.content, "文本已复制");
     };
 
-    const downloadAsset = (asset: Asset) => {
+    const downloadAsset = async (asset: Asset) => {
         if (asset.kind !== "image" && asset.kind !== "video" && asset.kind !== "audio") return;
-        const url = asset.kind === "image" ? asset.data.dataUrl : asset.data.url;
-        saveAs(url, `${asset.title || "asset"}.${asset.data.mimeType.split("/")[1] || "png"}`);
-    };
+        const extension = asset.data.mimeType.split("/")[1]?.replace("+xml", "") || "bin";
+        const filename = `${sanitizeFilename(asset.title || "asset")}.${extension}`;
+        try {
+            if (asset.kind === "image") {
+                const blob = asset.data.storageKey ? await getImageBlob(asset.data.storageKey) : null;
+                if (blob) return saveAs(blob, filename);
+                const url = asset.data.storageKey ? await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl) : asset.data.dataUrl;
+                return saveAs(url, filename);
+            }
+            const blob = asset.data.storageKey ? await getMediaBlob(asset.data.storageKey) : null;
+            if (blob) return saveAs(blob, filename);
+            const url = asset.data.storageKey ? await resolveMediaUrl(asset.data.storageKey, asset.data.url) : asset.data.url;
+            saveAs(url, filename);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "素材下载失败");
+        }
+};
 
     const exportAllAssets = async () => {
         if (!validAssets.length) {
@@ -370,4 +386,12 @@ function assetKindLabel(kind: AssetKind) {
     if (kind === "video") return "视频";
     if (kind === "audio") return "音频";
     return "文本";
+}
+function sanitizeFilename(value: string) {
+    const normalized = value
+        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/[. ]+$/g, "");
+    return normalized || "asset";
 }

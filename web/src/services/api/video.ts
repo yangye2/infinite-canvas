@@ -413,7 +413,7 @@ async function createCogVideoX3RequestBody(config: AiConfig, model: string, prom
     if (input.videoReferences.length || input.audioReferences.length) throw new VideoRequestError("CogVideoX-3 不支持参考视频或参考音频");
     const frames = [input.firstFrame, input.lastFrame].filter((frame): frame is ReferenceImage => Boolean(frame));
     const references = (frames.length ? frames : input.references).slice(0, 2);
-    const imageUrls = await Promise.all(references.map(imageToDataUrl));
+    const imageUrls = await Promise.all(references.map((image) => imageToDataUrl(image)));
     return {
         model,
         prompt,
@@ -732,7 +732,7 @@ async function createGeminiVeoRequestBody(config: AiConfig, model: string, promp
     if (input.firstFrame) instance.image = dataUrlToGeminiInlineData(await imageToDataUrl(input.firstFrame));
     if (input.lastFrame) instance.lastFrame = dataUrlToGeminiInlineData(await imageToDataUrl(input.lastFrame));
     if (input.references.length) {
-        const images = await Promise.all(input.references.map(imageToDataUrl));
+        const images = await Promise.all(input.references.map((image) => imageToDataUrl(image)));
         instance.referenceImages = images.map((image) => ({ image: dataUrlToGeminiInlineData(image), referenceType: "asset" }));
     }
     const resolution = normalizeGeminiVideoResolution(config.vquality);

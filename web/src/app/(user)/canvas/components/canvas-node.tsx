@@ -3,13 +3,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { ChevronRight, Image as ImageIcon, Maximize2, Music2, Pause, Play, RefreshCw, Star, Video } from "lucide-react";
+import { ChevronRight, Download, Image as ImageIcon, Maximize2, Music2, Pause, Play, RefreshCw, Star, Trash2, Video } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { formatBytes, formatDuration } from "@/lib/image-utils";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { CanvasResourceMentionTextarea } from "./canvas-resource-mention-textarea";
-import { CanvasNodeType, type CanvasNodeData, type Position } from "../types";
+import { CanvasNodeType, type CanvasNodeData, type CanvasNodeImage, type CanvasNodeText, type Position } from "../types";
 import { isCanvasImageNodeType } from "../utils/canvas-panorama";
 import type { CanvasResourceReference } from "../utils/canvas-resource-references";
 
@@ -46,9 +46,14 @@ type CanvasNodeProps = {
     onConnectStart: (event: React.MouseEvent, nodeId: string, handleType: "source" | "target") => void;
     onResize: (nodeId: string, width: number, height: number, position?: Position) => void;
     onContentChange: (nodeId: string, content: string) => void;
+    onTextAlternativeSelect?: (nodeId: string, textId: string) => void;
     onTitleChange: (nodeId: string, title: string) => void;
     onToggleBatch?: (nodeId: string) => void;
     onSetBatchPrimary?: (node: CanvasNodeData) => void;
+    onSelectImageResult?: (nodeId: string, imageId: string) => void;
+    onRetryImageResult?: (nodeId: string, imageId: string) => void;
+    onDownloadImageResult?: (nodeId: string, imageId: string) => void;
+    onDeleteImageResult?: (nodeId: string, imageId: string) => void;
     onRetry?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
     onSelectReference?: (nodeId: string) => void;
@@ -69,12 +74,17 @@ type NodeContentRendererProps = {
     now?: number;
     renderNodeContent?: (node: CanvasNodeData) => ReactNode;
     onContentChange: (nodeId: string, content: string) => void;
+    onTextAlternativeSelect?: (nodeId: string, textId: string) => void;
     onStopEditing: () => void;
     mentionReferences: CanvasResourceReference[];
     onRetry?: (node: CanvasNodeData) => void;
     onViewImage?: (node: CanvasNodeData) => void;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: () => void;
+    onSelectImageResult?: (nodeId: string, imageId: string) => void;
+    onRetryImageResult?: (nodeId: string, imageId: string) => void;
+    onDownloadImageResult?: (nodeId: string, imageId: string) => void;
+    onDeleteImageResult?: (nodeId: string, imageId: string) => void;
     onMoveStart?: (event: React.MouseEvent<HTMLButtonElement>) => void;
 };
 
@@ -107,6 +117,11 @@ export const CanvasNode = React.memo(function CanvasNode({
     onConnectStart,
     onResize,
     onContentChange,
+    onTextAlternativeSelect,
+    onSelectImageResult,
+    onRetryImageResult,
+    onDownloadImageResult,
+    onDeleteImageResult,
     onTitleChange,
     onToggleBatch,
     onSetBatchPrimary,
@@ -124,7 +139,7 @@ export const CanvasNode = React.memo(function CanvasNode({
     const hasImageContent = isCanvasImageNodeType(data.type) && Boolean(data.metadata?.content);
     const hasVideoContent = data.type === CanvasNodeType.Video && Boolean(data.metadata?.content);
     const hasAudioContent = data.type === CanvasNodeType.Audio && Boolean(data.metadata?.content);
-    const isBatchRoot = isCanvasImageNodeType(data.type) && Boolean(data.metadata?.isBatchRoot) && batchCount > 1;
+    const isBatchRoot = isCanvasImageNodeType(data.type) && batchCount > 1 && (Boolean(data.metadata?.isBatchRoot) || Boolean(data.metadata?.images?.length));
     const isBatchChild = isCanvasImageNodeType(data.type) && Boolean(data.metadata?.batchRootId);
     const isActive = isConnectionTarget || isSelected || isFocusRelated;
     const imageBorderColor = isActive ? selectionBlue : isRelated && !isBatchChild ? theme.node.muted : "transparent";
@@ -362,8 +377,9 @@ export const CanvasNode = React.memo(function CanvasNode({
                         return;
                     }
                     if (isBatchRoot) {
+                        event.preventDefault();
                         event.stopPropagation();
-                        onToggleBatch?.(data.id);
+                        onViewImage?.(data);
                         return;
                     }
                     if ((isCanvasImageNodeType(data.type) && hasImageContent) || (data.type === CanvasNodeType.Video && hasVideoContent)) {
@@ -407,6 +423,11 @@ export const CanvasNode = React.memo(function CanvasNode({
                             renderNodeContent={renderNodeContent}
                             mentionReferences={mentionReferences}
                             onContentChange={onContentChange}
+                            onTextAlternativeSelect={onTextAlternativeSelect}
+                            onSelectImageResult={onSelectImageResult}
+                            onRetryImageResult={onRetryImageResult}
+                            onDownloadImageResult={onDownloadImageResult}
+                            onDeleteImageResult={onDeleteImageResult}
                             onStopEditing={() => setIsEditingContent(false)}
                             onRetry={onRetry}
                             onViewImage={onViewImage}
@@ -433,9 +454,9 @@ export const CanvasNode = React.memo(function CanvasNode({
                 {!referenceSelectionState ? <ResizeHandle corner="bottom-right" onMouseDown={handleResizeMouseDown} /> : null}
             </div>
 
-            {!referenceSelectionState && !isGroup ? (
+            {!referenceSelectionState ? (
                 <>
-                    <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} />
+                    {!isGroup ? <ConnectionHandleDot side="left" visible={hovered || isSelected || isConnecting} onMouseDown={(event) => onConnectStart(event, data.id, "target")} /> : null}
                     <ConnectionHandleDot side="right" visible={data.type !== CanvasNodeType.Config && (hovered || isSelected || isConnecting)} onMouseDown={(event) => onConnectStart(event, data.id, "source")} />
                 </>
             ) : null}
@@ -549,18 +570,22 @@ function UnknownNodeContent({ theme }: Pick<NodeContentRendererProps, "theme">) 
     );
 }
 
-function TextContent({ node, theme, isEditingContent, textareaRef, mentionReferences, onContentChange, onStopEditing }: NodeContentRendererProps) {
+function TextContent({ node, theme, isEditingContent, textareaRef, mentionReferences, onContentChange, onTextAlternativeSelect, onStopEditing }: NodeContentRendererProps) {
     const fontSize = node.metadata?.fontSize || 14;
     const textStyle = { fontSize: `${fontSize}px`, lineHeight: `${Math.round(fontSize * 1.65)}px`, color: theme.node.text, boxSizing: "border-box" } as React.CSSProperties;
+    const texts = node.metadata?.texts || [];
+    const primaryText = texts.find((item) => item.id === node.metadata?.primaryTextId) || texts[0];
+    const content = primaryText?.content || node.metadata?.content || "";
 
     return (
         <div className="flex h-full w-full flex-col overflow-hidden">
+            {texts.length > 1 ? <TextAlternativeBar nodeId={node.id} texts={texts} primaryTextId={primaryText?.id} theme={theme} onSelect={onTextAlternativeSelect} /> : null}
             {isEditingContent ? (
                 <CanvasResourceMentionTextarea
                     ref={textareaRef}
                     className="thin-scrollbar block h-full w-full resize-none overflow-y-auto whitespace-pre-wrap break-words border-none bg-transparent p-4 m-0 font-mono outline-none select-text appearance-none"
                     style={textStyle}
-                    value={node.metadata?.content || ""}
+                    value={content}
                     references={mentionReferences}
                     highlightLabels={false}
                     onChange={(value) => onContentChange(node.id, value)}
@@ -578,9 +603,32 @@ function TextContent({ node, theme, isEditingContent, textareaRef, mentionRefere
                     style={textStyle}
                     onWheel={(event) => event.stopPropagation()}
                 >
-                    {node.metadata?.content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
+                    {content || <span style={{ color: theme.node.placeholder }}>双击编辑文字</span>}
                 </div>
             )}
+        </div>
+    );
+}
+
+function TextAlternativeBar({ nodeId, texts, primaryTextId, theme, onSelect }: { nodeId: string; texts: CanvasNodeText[]; primaryTextId?: string; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect?: (nodeId: string, textId: string) => void }) {
+    return (
+        <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5" style={{ borderColor: theme.node.stroke }}>
+            {texts.map((text, index) => (
+                <button
+                    key={text.id}
+                    type="button"
+                    className="h-6 min-w-6 rounded-md border px-1.5 text-[11px] transition hover:opacity-80"
+                    style={{ borderColor: text.id === primaryTextId ? theme.node.text : theme.node.stroke, color: theme.node.text, background: "transparent" }}
+                    title={`切换文本${index + 1}`}
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect?.(nodeId, text.id);
+                    }}
+                >
+                    {index + 1}
+                </button>
+            ))}
         </div>
     );
 }
@@ -613,6 +661,10 @@ function ImageNodeContent(props: NodeContentRendererProps) {
             batchRecovering={props.batchRecovering}
             onToggleBatch={props.onToggleBatch}
             onSetBatchPrimary={props.onSetBatchPrimary}
+            onSelectImageResult={props.onSelectImageResult}
+            onRetryImageResult={props.onRetryImageResult}
+            onDownloadImageResult={props.onDownloadImageResult}
+            onDeleteImageResult={props.onDeleteImageResult}
         />
     );
 }
@@ -632,6 +684,10 @@ function PanoramaNodeContent(props: NodeContentRendererProps) {
             batchRecovering={props.batchRecovering}
             onToggleBatch={props.onToggleBatch}
             onSetBatchPrimary={props.onSetBatchPrimary}
+            onSelectImageResult={props.onSelectImageResult}
+            onRetryImageResult={props.onRetryImageResult}
+            onDownloadImageResult={props.onDownloadImageResult}
+            onDeleteImageResult={props.onDeleteImageResult}
             media={<CanvasPanoramaViewer src={src} alt={props.node.title} proxyGeneratedPanorama={proxyGeneratedPanorama} expandOnDoubleClick={!props.isBatchRoot} onMoveStart={props.onMoveStart} onOpen={props.onViewImage ? () => props.onViewImage?.(props.node) : undefined} />}
         />
     );
@@ -725,6 +781,10 @@ function ImageContent({
     batchRecovering,
     onToggleBatch,
     onSetBatchPrimary,
+    onSelectImageResult,
+    onRetryImageResult,
+    onDownloadImageResult,
+    onDeleteImageResult,
     media,
 }: {
     node: CanvasNodeData;
@@ -735,10 +795,16 @@ function ImageContent({
     batchRecovering: boolean;
     onToggleBatch?: () => void;
     onSetBatchPrimary?: () => void;
+    onSelectImageResult?: (nodeId: string, imageId: string) => void;
+    onRetryImageResult?: (nodeId: string, imageId: string) => void;
+    onDownloadImageResult?: (nodeId: string, imageId: string) => void;
+    onDeleteImageResult?: (nodeId: string, imageId: string) => void;
     media?: ReactNode;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
     const isBatchChild = Boolean(node.metadata?.batchRootId);
+    const imageResults = node.metadata?.images || [];
+    const primaryImageId = node.metadata?.primaryImageId || imageResults[0]?.id;
 
     return (
         <BatchFrame batchCount={isBatchRoot ? batchCount : 0} batchExpanded={batchExpanded} batchOpening={batchOpening} batchRecovering={batchRecovering} onToggleBatch={onToggleBatch}>
@@ -786,7 +852,37 @@ function ImageContent({
                     设为主图
                 </button>
             ) : null}
+            {imageResults.length > 1 && batchExpanded ? <ImageResultStrip node={node} images={imageResults} primaryImageId={primaryImageId} theme={theme} onSelect={onSelectImageResult} onRetry={onRetryImageResult} onDownload={onDownloadImageResult} onDelete={onDeleteImageResult} /> : null}
         </BatchFrame>
+    );
+}
+
+function ImageResultStrip({ node, images, primaryImageId, theme, onSelect, onRetry, onDownload, onDelete }: { node: CanvasNodeData; images: CanvasNodeImage[]; primaryImageId?: string; theme: (typeof canvasThemes)[keyof typeof canvasThemes]; onSelect?: (nodeId: string, imageId: string) => void; onRetry?: (nodeId: string, imageId: string) => void; onDownload?: (nodeId: string, imageId: string) => void; onDelete?: (nodeId: string, imageId: string) => void }) {
+    return (
+        <div className="absolute inset-x-2 bottom-2 z-30 grid max-h-[42%] grid-cols-4 gap-1.5 overflow-y-auto rounded-xl border p-1.5 backdrop-blur-md" style={{ background: `${theme.toolbar.panel}dd`, borderColor: theme.toolbar.border }}>
+            {images.map((image, index) => (
+                <div key={image.id} className="group/result relative">
+                    <button type="button" className="relative aspect-square w-full overflow-hidden rounded-lg border transition hover:opacity-85" style={{ borderColor: image.id === primaryImageId ? theme.node.activeStroke : theme.toolbar.border, background: image.content ? "transparent" : theme.node.fill }} title={image.content ? `设为第${index + 1}张主图` : image.status === "error" ? "点击重试" : "生成中"} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (!image.content && image.status === "error" && onRetry) onRetry(node.id, image.id); else onSelect?.(node.id, image.id); }}>
+                        {image.content ? <img src={image.content} alt={`结果 ${index + 1}`} className="h-full w-full object-contain" draggable={false} /> : <span className="grid h-full place-items-center text-[10px]" style={{ color: theme.node.muted }}>{image.status === "error" ? "失败·点击重试" : "生成中"}</span>}
+                        <span className="absolute bottom-1 right-1 rounded bg-black/55 px-1 text-[9px] text-white">{index + 1}</span>
+                    </button>
+                    {image.content && (onDownload || onDelete) ? (
+                        <div className="absolute right-1 top-1 z-10 hidden gap-0.5 group-hover/result:flex">
+                            {onDownload ? (
+                                <button type="button" aria-label={`下载第${index + 1}张`} title={`下载第${index + 1}张`} className="grid size-5 place-items-center rounded bg-black/60 text-white transition hover:bg-black/80" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDownload(node.id, image.id); }}>
+                                    <Download className="size-3" />
+                                </button>
+                            ) : null}
+                            {onDelete ? (
+                                <button type="button" aria-label={`删除第${index + 1}张`} title={`删除第${index + 1}张`} className="grid size-5 place-items-center rounded bg-black/60 text-white transition hover:bg-red-600" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onDelete(node.id, image.id); }}>
+                                    <Trash2 className="size-3" />
+                                </button>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </div>
+            ))}
+        </div>
     );
 }
 
@@ -810,14 +906,6 @@ function BatchFrame({ batchCount, batchExpanded, batchOpening, batchRecovering, 
     return (
         <div
             className="group/batch relative h-full w-full overflow-visible"
-            onDoubleClick={
-                isBatchRoot
-                    ? (event) => {
-                        event.stopPropagation();
-                        onToggleBatch?.();
-                    }
-                    : undefined
-            }
         >
             {isBatchRoot ? (
                 <div className="pointer-events-none absolute inset-0 overflow-visible">

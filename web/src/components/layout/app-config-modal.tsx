@@ -48,6 +48,7 @@ export function AppConfigModal() {
     const [measuringStorageType, setMeasuringStorageType] = useState<"s3" | "webdav" | null>(null);
     const [storageUsageText, setStorageUsageText] = useState("");
     const [webDAVStorageUsageText, setWebDAVStorageUsageText] = useState("");
+    const [browserStorageUsageText, setBrowserStorageUsageText] = useState("");
     const config = useConfigStore((state) => state.config);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const isConfigOpen = useConfigStore((state) => state.isConfigOpen);
@@ -117,6 +118,20 @@ export function AppConfigModal() {
             .catch(() => {
                 if (!canceled) setAllowUserStorageProvider(false);
             });
+        return () => {
+            canceled = true;
+        };
+    }, [isConfigOpen]);
+
+    useEffect(() => {
+        if (!isConfigOpen || !navigator.storage?.estimate) return;
+        let canceled = false;
+        void navigator.storage.estimate().then(({ usage = 0, quota = 0 }) => {
+            if (canceled) return;
+            setBrowserStorageUsageText(`${formatBytes(usage)} / ${formatBytes(quota)}`);
+        }).catch(() => {
+            if (!canceled) setBrowserStorageUsageText("");
+        });
         return () => {
             canceled = true;
         };
@@ -403,6 +418,16 @@ export function AppConfigModal() {
                                 onBlur={(event) => updateConfig("canvasImageCount", normalizeImageCount(event.target.value))}
                             />
                         </Form.Item>
+                        <Form.Item label="默认文本生成次数" extra="配置节点切换到文本模式时使用，独立于生图张数。" className="mb-4">
+                            <Input
+                                type="number"
+                                min={1}
+                                max={15}
+                                value={config.textCount}
+                                onChange={(event) => updateConfig("textCount", event.target.value)}
+                                onBlur={(event) => updateConfig("textCount", normalizeImageCount(event.target.value))}
+                            />
+                        </Form.Item>
                         {geminiTts ? (
                             <Form.Item label="默认 Gemini 音色" className="mb-4">
                                 <Select showSearch optionFilterProp="label" value={normalizeGeminiTtsVoice(config.geminiTtsVoice)} options={geminiTtsVoiceOptions} onChange={(value) => updateConfig("geminiTtsVoice", value)} />
@@ -448,6 +473,13 @@ export function AppConfigModal() {
                         <FeatureSwitch title="流式传输" description="开启后请求中追加 stream，支持读取中间图片事件并避免长时间无数据。" checked={Boolean(config.streamImages)} onChange={(checked) => updateConfig("streamImages", checked ? "1" : "")} />
                         <FeatureSwitch title="返回 Base64 图片数据" description="开启后 Image API 请求会追加 response_format: b64_json。" checked={Boolean(config.responseFormatB64Json)} onChange={(checked) => updateConfig("responseFormatB64Json", checked ? "1" : "")} />
                         <FeatureSwitch title="Codex CLI 兼容模式" description="开启后减少不兼容参数，并追加防提示词改写前缀。" checked={Boolean(config.codexCli)} onChange={(checked) => updateConfig("codexCli", checked ? "1" : "")} />
+                    </div>
+                    <FeatureSwitch title="透明背景" description="开启后支持的图片模型会请求透明背景。" checked={config.background === "transparent"} onChange={(checked) => updateConfig("background", checked ? "transparent" : "")} />
+                    <div className="mb-4 rounded-xl border border-stone-200 px-3 py-2 text-sm dark:border-stone-800">
+                        <div className="font-medium">本地存储占用</div>
+                        <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                            {browserStorageUsageText ? `浏览器已用 / 配额：${browserStorageUsageText}` : "浏览器存储占用暂不可用"}
+                        </div>
                     </div>
                     {canUseUserStorageProvider ? (
                         <>

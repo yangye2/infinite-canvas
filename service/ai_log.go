@@ -15,11 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/robfig/cron/v3"
 	"github.com/tigerowo/infinite-canvas/config"
 	"github.com/tigerowo/infinite-canvas/model"
 	"github.com/tigerowo/infinite-canvas/repository"
-	"github.com/google/uuid"
-	"github.com/robfig/cron/v3"
 )
 
 const (
@@ -31,10 +31,11 @@ const (
 )
 
 var (
-	htmlTagPattern        = regexp.MustCompile(`(?s)<[^>]+>`)
-	whitespacePattern     = regexp.MustCompile(`\s+`)
-	longDataURLPattern    = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]{512,}`)
-	longBase64TextPattern = regexp.MustCompile(`"[A-Za-z0-9+/=]{512,}"`)
+	htmlTagPattern         = regexp.MustCompile(`(?s)<[^>]+>`)
+	whitespacePattern      = regexp.MustCompile(`\s+`)
+	longDataURLPattern     = regexp.MustCompile(`data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]{512,}`)
+	longBase64TextPattern  = regexp.MustCompile(`"[A-Za-z0-9+/=]{512,}"`)
+	sensitiveLogKeyPattern = regexp.MustCompile(`(?i)(api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|password|token)`)
 
 	aiLogCleanupCron *cron.Cron
 	aiLogCleanupOnce sync.Once
@@ -72,7 +73,7 @@ func SaveAICallLog(input AICallLogInput) {
 		Status:          input.Status,
 		DurationMs:      input.DurationMs,
 		Credits:         input.Credits,
-		RequestBody:     truncateLogText(input.RequestBody, aiLogRequestTextLimit),
+		RequestBody:     truncateLogText(normalizeAICallRequestLog(input.RequestBody), aiLogRequestTextLimit),
 		ResponseBody:    responseBody,
 		Error:           truncateLogText(errorText, aiLogErrorTextLimit),
 		CreatedAt:       now(),
@@ -341,6 +342,7 @@ func formatAICallLogPayload(raw string) string {
 	}
 	var payload any
 	if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+		redactSensitiveLogFields(&payload)
 		redactLargeLogStrings(&payload)
 		if encoded, err := json.MarshalIndent(payload, "", "  "); err == nil {
 			return string(encoded)
@@ -371,6 +373,7 @@ func formatEventStreamLog(raw string) string {
 			formatted = append(formatted, redactLargePlainLogText(line))
 			continue
 		}
+		redactSensitiveLogFields(&payload)
 		redactLargeLogStrings(&payload)
 		encoded, err := json.Marshal(payload)
 		if err != nil {
@@ -485,6 +488,7 @@ func cleanPlainLogText(value string) string {
 	}
 	value = longDataURLPattern.ReplaceAllString(value, "[redacted image data]")
 	value = longBase64TextPattern.ReplaceAllString(value, `"[redacted large base64/string]"`)
+	value = redactSensitivePlainLogText(value)
 	value = html.UnescapeString(htmlTagPattern.ReplaceAllString(value, " "))
 	value = whitespacePattern.ReplaceAllString(value, " ")
 	value = strings.TrimSpace(value)
@@ -497,7 +501,54 @@ func cleanPlainLogText(value string) string {
 func redactLargePlainLogText(value string) string {
 	value = longDataURLPattern.ReplaceAllString(value, "[redacted image data]")
 	value = longBase64TextPattern.ReplaceAllString(value, `"[redacted large base64/string]"`)
+	value = redactSensitivePlainLogText(value)
 	return strings.TrimSpace(value)
+}
+
+func normalizeAICallRequestLog(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(raw), &payload); err == nil {
+		redactSensitiveLogFields(&payload)
+		redactLargeLogStrings(&payload)
+		if encoded, err := json.MarshalIndent(payload, "", "  "); err == nil {
+			return string(encoded)
+		}
+	}
+	return redactSensitivePlainLogText(raw)
+}
+
+func redactSensitivePlainLogText(value string) string {
+	lines := strings.Split(value, "\n")
+	for index, line := range lines {
+		separatorIndex := strings.IndexAny(line, ":=")
+		if separatorIndex > 0 && sensitiveLogKeyPattern.MatchString(strings.TrimSpace(line[:separatorIndex])) {
+			lines[index] = line[:separatorIndex+1] + " [redacted]"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func redactSensitiveLogFields(value *any) {
+	switch typed := (*value).(type) {
+	case map[string]any:
+		for key, item := range typed {
+			if sensitiveLogKeyPattern.MatchString(key) {
+				typed[key] = "[redacted]"
+				continue
+			}
+			redactSensitiveLogFields(&item)
+			typed[key] = item
+		}
+	case []any:
+		for index, item := range typed {
+			redactSensitiveLogFields(&item)
+			typed[index] = item
+		}
+	}
 }
 
 func redactLargeLogStrings(value *any) {

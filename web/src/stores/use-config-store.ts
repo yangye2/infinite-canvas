@@ -64,9 +64,11 @@ export type AiConfig = {
     audioModels: string[];
     quality: string;
     size: string;
+    background: string;
     videoSize: string;
     count: string;
     canvasImageCount: string;
+    textCount: string;
     timeout: string;
     apiMode: string;
     streamImages: string;
@@ -137,9 +139,11 @@ export const defaultConfig: AiConfig = {
     audioModels: [],
     quality: "auto",
     size: "1:1",
+    background: "",
     videoSize: "1280x720",
     count: "1",
     canvasImageCount: "1",
+    textCount: "1",
     timeout: "600",
     apiMode: "images",
     streamImages: "",
@@ -174,6 +178,7 @@ type ConfigStore = {
     loadPublicSettings: () => Promise<void>;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean) => void;
+    importChannelCredentials: (input: { baseUrl?: string | null; apiKey?: string | null }) => ChannelCredentialsImportResult;
     setConfigDialogOpen: (isOpen: boolean) => void;
     clearPromptContinue: () => void;
 };
@@ -390,6 +395,12 @@ export const useConfigStore = create<ConfigStore>()(
             },
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false) => set({ isConfigOpen: true, shouldPromptContinue }),
+            importChannelCredentials: (input) => {
+                const currentConfig = get().config;
+                const result = upsertChannelCredentials(currentConfig, input);
+                if (result.config !== currentConfig) set({ config: { ...result.config, channelMode: "local" } });
+                return { status: result.status, channelName: result.channelName };
+            },
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
             clearPromptContinue: () => set({ shouldPromptContinue: false }),
         }),
@@ -447,6 +458,8 @@ export const useConfigStore = create<ConfigStore>()(
                         videoWatermark: config.videoWatermark || "false",
                         videoCharacterOrientation: config.videoCharacterOrientation === "image" ? "image" : "video",
                         canvasImageCount: config.canvasImageCount || "1",
+                        textCount: config.textCount || "1",
+                        background: config.background === "transparent" ? "transparent" : "",
                         imageModels: filterChannelModelsByCapability(localChannels, "image"),
                         videoModels: filterChannelModelsByCapability(localChannels, "video"),
                         textModels: filterChannelModelsByCapability(localChannels, "text"),
@@ -498,6 +511,68 @@ function normalizeVersionedBaseUrl(baseUrl: string) {
     } catch {
         return baseUrl;
     }
+}
+
+export type ChannelCredentialsImportResult = {
+    status: "created" | "updated" | "missing-base-url" | "invalid-base-url";
+    channelName?: string;
+};
+
+function normalizeImportedBaseUrl(baseUrl: string) {
+    try {
+        const url = new URL(baseUrl.trim());
+        url.hash = "";
+        return url.toString().replace(/\/+$/, "");
+    } catch {
+        return baseUrl.trim().replace(/\/+$/, "");
+    }
+}
+
+function isHttpBaseUrl(baseUrl: string) {
+    try {
+        const url = new URL(baseUrl.trim());
+        return (url.protocol === "http:" || url.protocol === "https:") && Boolean(url.hostname);
+    } catch {
+        return false;
+    }
+}
+
+function normalizedBaseUrlKey(baseUrl: string) {
+    return normalizeImportedBaseUrl(baseUrl).replace(/\/v1$/i, "");
+}
+
+function importedChannelName(baseUrl: string) {
+    try {
+        return new URL(baseUrl).hostname.replace(/^(?:www|api)\./i, "") || "导入渠道";
+    } catch {
+        return "导入渠道";
+    }
+}
+
+export function upsertChannelCredentials(
+    config: AiConfig,
+    input: { baseUrl?: string | null; apiKey?: string | null },
+): ChannelCredentialsImportResult & { config: AiConfig } {
+    const rawBaseUrl = input.baseUrl?.trim() || "";
+    if (!rawBaseUrl) return { status: "missing-base-url", config };
+    if (!isHttpBaseUrl(rawBaseUrl)) return { status: "invalid-base-url", config };
+
+    const baseUrl = normalizeImportedBaseUrl(rawBaseUrl);
+    const apiKey = input.apiKey?.trim() || "";
+    const allChannels = normalizeLocalChannels(config);
+    // 导入时忽略本地直连占位渠道（无 Base URL、无密钥、无模型），避免残留空渠道
+    const placeholderIndex = allChannels.findIndex((channel) => channel.id === "local-default" && !channel.baseUrl && !channel.apiKey && !channel.models.length);
+    const channels = placeholderIndex >= 0 ? allChannels.filter((_, index) => index !== placeholderIndex) : allChannels;
+    const matchingIndex = channels.findIndex((channel) => normalizedBaseUrlKey(channel.baseUrl) === normalizedBaseUrlKey(baseUrl));
+
+    if (matchingIndex >= 0) {
+        const existing = channels[matchingIndex];
+        const nextChannels = channels.map((channel, index) => (index === matchingIndex ? { ...channel, baseUrl: baseUrl || channel.baseUrl, ...(apiKey ? { apiKey } : {}) } : channel));
+        return { status: "updated", channelName: existing.name, config: { ...config, localChannels: nextChannels } };
+    }
+
+    const channel: LocalModelChannel = { id: "local-" + Date.now(), protocol: "openai", name: importedChannelName(baseUrl), baseUrl, apiKey, models: [] };
+    return { status: "created", channelName: channel.name, config: { ...config, localChannels: [...channels, channel] } };
 }
 
 export function normalizeLocalChannels(config: Partial<AiConfig>): LocalModelChannel[] {

@@ -306,7 +306,10 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
     return url;
 }
 
-export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }) {
+export async function imageToDataUrl(image: { url?: string; dataUrl?: string; storageKey?: string }, options: { signal?: AbortSignal; timeoutMs?: number } = {}) {
+    const downloadTimeoutMs = options.timeoutMs ?? 30000;
+    const timeoutSignal = typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(downloadTimeoutMs) : undefined;
+    const signal = options.signal && timeoutSignal && "any" in AbortSignal ? AbortSignal.any([options.signal, timeoutSignal]) : options.signal || timeoutSignal;
     const serverObjectId = image.storageKey?.startsWith("server:") ? image.storageKey.slice("server:".length) : "";
     const directGuestObject = image.storageKey?.startsWith("server:webdav:");
     const hasPersistedUrl = [image.dataUrl, image.url].some((url) => Boolean(url && !url.startsWith("blob:")));
@@ -329,12 +332,23 @@ export async function imageToDataUrl(image: { url?: string; dataUrl?: string; st
         if (url.startsWith("data:")) return url;
         try {
             const proxyUrl = getProxyUrl(url);
-            const response = await fetch(proxyUrl);
+            const response = await fetch(proxyUrl, signal ? { signal } : undefined);
             if (!response.ok) {
                 lastError = `读取参考图失败：${response.status}`;
                 continue;
             }
-            return blobToDataUrl(await response.blob());
+            const blob = await response.blob();
+            // 下载结果必须是图片内容：拒绝把 HTML 错误页、JSON 或空响应当作图片保存
+            // 注意：部分 CDN 用 application/octet-stream 返回图片，这类无明确文本类型的响应保留
+            if (blob.type && /^(text\/|application\/(json|xml|javascript))/i.test(blob.type)) {
+                lastError = `下载内容不是图片：${blob.type}`;
+                continue;
+            }
+            if (!blob.size) {
+                lastError = "下载内容为空";
+                continue;
+            }
+            return blobToDataUrl(blob);
         } catch (error) {
             lastError = error instanceof Error ? error.message : "读取参考图失败";
         }

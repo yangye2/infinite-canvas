@@ -116,6 +116,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, videoFram
                     <CanvasCameraControl value={node.metadata?.cameraControl} onChange={(cameraControl) => onConfigChange(node.id, { cameraControl })} buttonClassName="canvas-compact-control !h-10 !w-full !justify-start !rounded-lg !px-2" />
                 ) : null}
             </div>
+            {mode === "text" ? <TextCountControl value={count} onChange={(value) => onConfigChange(node.id, { textCount: value, count: value })} theme={theme} /> : null}
 
             <Button
                 type="primary"
@@ -164,6 +165,7 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         audioChannelId,
         quality: node.metadata?.quality || globalConfig.quality || defaultConfig.quality,
         size: node.metadata?.size || (mode === "video" ? globalConfig.videoSize || defaultConfig.videoSize : globalConfig.size || defaultConfig.size),
+        background: node.metadata?.background || globalConfig.background || defaultConfig.background,
         videoSeconds: node.metadata?.seconds || globalConfig.videoSeconds || defaultConfig.videoSeconds,
         vquality: node.metadata?.vquality || globalConfig.vquality || defaultConfig.vquality,
         videoMode: node.metadata?.mode || globalConfig.videoMode || defaultConfig.videoMode,
@@ -188,7 +190,8 @@ function buildNodeConfig(globalConfig: AiConfig, node: CanvasNodeData, mode: Can
         mimoTtsFormat: node.metadata?.mimoTtsFormat || globalConfig.mimoTtsFormat || defaultConfig.mimoTtsFormat,
         mimoVoiceDesignPrompt: node.metadata?.mimoVoiceDesignPrompt || globalConfig.mimoVoiceDesignPrompt || defaultConfig.mimoVoiceDesignPrompt,
         geminiTtsVoice: node.metadata?.geminiTtsVoice || globalConfig.geminiTtsVoice || defaultConfig.geminiTtsVoice,
-        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : globalConfig.count) || defaultConfig.count),
+        count: String(node.metadata?.count || (mode === "image" ? globalConfig.canvasImageCount || globalConfig.count : mode === "text" ? node.metadata?.textCount || globalConfig.textCount : globalConfig.count) || defaultConfig.count),
+        textCount: String(node.metadata?.textCount || globalConfig.textCount || defaultConfig.textCount),
     };
 }
 
@@ -220,4 +223,22 @@ function videoConfigPatch(key: keyof AiConfig, value: string) {
 
 function audioConfigPatch(key: CanvasAudioSettingKey, value: string): Partial<CanvasNodeMetadata> {
     return { [key]: value } as Partial<CanvasNodeMetadata>;
+}
+
+function TextCountControl({ value, onChange, theme }: { value: number; onChange: (value: number) => void; theme: (typeof canvasThemes)[keyof typeof canvasThemes] }) {
+    return (
+        <div className="mb-2 flex items-center justify-between rounded-lg border px-3 py-2 text-xs" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
+            <span style={{ color: theme.node.muted }}>文本生成次数</span>
+            <input
+                type="number"
+                min={1}
+                max={15}
+                value={value}
+                className="h-7 w-16 rounded-md border bg-transparent px-2 text-center outline-none"
+                style={{ borderColor: theme.node.stroke, color: theme.node.text }}
+                onChange={(event) => onChange(Math.max(1, Math.min(15, Math.floor(Number(event.target.value) || 1))))}
+                onMouseDown={(event) => event.stopPropagation()}
+            />
+        </div>
+    );
 }

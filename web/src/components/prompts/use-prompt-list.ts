@@ -6,6 +6,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { ALL_PROMPTS_OPTION, fetchPrompts } from "@/services/api/prompts";
 
 export const PROMPT_PAGE_SIZE = 20;
+export const PROMPT_CACHE_TIME = 24 * 60 * 60 * 1000;
 
 export function usePromptList({ keyword, tags, category, enabled = true }: { keyword: string; tags: string[]; category: string; enabled?: boolean }) {
     const query = useInfiniteQuery({
@@ -14,6 +15,8 @@ export function usePromptList({ keyword, tags, category, enabled = true }: { key
         initialPageParam: 1,
         getNextPageParam: (lastPage, pages) => (pages.reduce((total, page) => total + page.items.length, 0) < lastPage.total ? pages.length + 1 : undefined),
         enabled,
+        staleTime: PROMPT_CACHE_TIME,
+        gcTime: PROMPT_CACHE_TIME,
     });
     const firstPage = query.data?.pages[0];
     return {

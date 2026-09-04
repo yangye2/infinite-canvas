@@ -89,6 +89,7 @@ type ImageRequestParams = {
     n: number;
     quality: string;
     size?: string;
+    background?: "transparent";
     timeoutSeconds: number;
     streamPartialImages: number;
 };
@@ -165,6 +166,7 @@ function createImageRequestParams(config: AiConfig): ImageRequestParams {
         n: normalizeBoundedInteger(config.count, 1, 1, 15),
         quality,
         size: resolveRequestSize(quality, config.size),
+        background: config.background === "transparent" ? "transparent" : undefined,
         timeoutSeconds: IMAGE_REQUEST_TIMEOUT_SECONDS,
         streamPartialImages: normalizeBoundedInteger(config.streamPartialImages, 1, 0, 3),
     };
@@ -181,6 +183,10 @@ function isGrok2APIImageConfig(config: AiConfig) {
 function isZhipuImageModel(model: string) {
     const value = model.trim().toLowerCase();
     return value === "glm-image" || value.startsWith("cogview-");
+}
+
+function isGPTImageModel(model: string) {
+    return model.trim().toLowerCase().includes("gpt-image");
 }
 
 function normalizeZhipuImageQuality(model: string, quality: string) {
@@ -219,13 +225,14 @@ function applyImageGenerationParams(body: Record<string, unknown>, config: AiCon
     }
 
     if (params.size) body.size = params.size;
+    if (params.background) body.background = params.background;
     if (params.quality && !config.codexCli) body.quality = params.quality;
 }
 
 function applyImageGenerationOptions(body: Record<string, unknown>, config: AiConfig, params: ImageRequestParams) {
     if (isZhipuImageModel(config.model)) return;
     if (params.n > 1) body.n = params.n;
-    if (config.responseFormatB64Json) body.response_format = "b64_json";
+    if (config.responseFormatB64Json && !isGPTImageModel(config.model)) body.response_format = "b64_json";
     if (config.streamImages) {
         body.stream = true;
         body.partial_images = params.streamPartialImages;
@@ -240,25 +247,33 @@ function normalizeBase64Image(value: string, fallbackMime: string) {
     return value.startsWith("data:") ? value : `data:${fallbackMime};base64,${value}`;
 }
 
-function resolveImageDataUrl(item: Record<string, unknown>, mime: string) {
+function hasImageData(item: Record<string, unknown>) {
+    return Boolean(
+        (typeof item.b64_json === "string" && item.b64_json) ||
+        (typeof item.url === "string" && item.url),
+    );
+}
+
+async function resolveImageDataUrl(item: Record<string, unknown>, mime: string) {
     if (typeof item.b64_json === "string" && item.b64_json) {
         return normalizeBase64Image(item.b64_json, mime);
     }
     if (typeof item.url === "string" && item.url) {
-        return item.url;
+        try {
+            return await imageToDataUrl({ url: item.url });
+        } catch {
+            return item.url;
+        }
     }
     return null;
 }
 
-function parseImagePayload(payload: ImageApiResponse, mime: string): GeneratedImage[] {
+async function parseImagePayload(payload: ImageApiResponse, mime: string): Promise<GeneratedImage[]> {
     if (typeof payload.code === "number" && payload.code !== 0) {
         throw new ImageRequestError(payload.msg || "请求失败", payload);
     }
-    const images =
-        payload.data
-            ?.map((item) => resolveImageDataUrl(item, mime))
-            .filter((value): value is string => Boolean(value))
-            .map((dataUrl) => ({ id: nanoid(), dataUrl })) || [];
+    const values = payload.data ? await Promise.all(payload.data.map((item) => resolveImageDataUrl(item, mime))) : [];
+    const images = values.filter((value): value is string => Boolean(value)).map((dataUrl) => ({ id: nanoid(), dataUrl }));
 
     if (images.length === 0) {
         throw new ImageRequestError("接口没有返回图片", payload);
@@ -460,7 +475,7 @@ async function parseImagesStreamResponse(response: Response, mime: string): Prom
         if (object === "image.generation.result" || object === "image.edit.result") {
             resultPayload = event as ImageApiResponse;
         }
-        if (resolveImageDataUrl(event, mime)) {
+        if (hasImageData(event)) {
             const imageIndex =
                 typeof event.image_index === "number" || typeof event.image_index === "string" ? String(event.image_index) : `event-${imageItems.size}`;
             imageItems.set(imageIndex, event);
@@ -673,7 +688,7 @@ async function requestImageGenerationSingle(config: AiConfig & { seedIndex?: num
                     return { images, responseBody: summarizeGeneratedImages(images, "event-stream") };
                 }
                 const payload = (await response.json()) as ImageApiResponse;
-                const images = parseImagePayload(payload, mime);
+                const images = await parseImagePayload(payload, mime);
                 return { images, responseBody: stringifyLogPayload(payload) };
             },
         );
@@ -714,7 +729,7 @@ async function requestImageGenerationSingle(config: AiConfig & { seedIndex?: num
                 return { images, responseBody: summarizeGeneratedImages(images, "event-stream") };
             }
             const payload = (await response.json()) as ImageApiResponse;
-            return { images: parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
+            return { images: await parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
         },
     );
 }
@@ -727,7 +742,7 @@ async function createGrokImageEditBody(config: AiConfig, prompt: string, referen
     };
     if (params.n > 1) body.n = params.n;
     applyImageGenerationParams(body, config, params, "edit");
-    if (config.responseFormatB64Json) body.response_format = "b64_json";
+    if (config.responseFormatB64Json && !isGPTImageModel(config.model)) body.response_format = "b64_json";
     if (config.streamImages) {
         body.stream = true;
         body.partial_images = params.streamPartialImages;
@@ -760,7 +775,7 @@ async function requestGrokImageEditSingle(config: AiConfig, prompt: string, refe
                 return { images, responseBody: summarizeGeneratedImages(images, "event-stream") };
             }
             const payload = (await response.json()) as ImageApiResponse;
-            return { images: parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
+            return { images: await parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
         },
     );
 }
@@ -775,14 +790,16 @@ async function requestImageEditSingle(config: AiConfig, prompt: string, referenc
     formData.set("prompt", withPromptGuard(config, withSystemPrompt(config, prompt)));
     if (params.n > 1) formData.set("n", String(params.n));
     if (params.size) formData.set("size", params.size);
+    if (params.background) formData.set("background", params.background);
     if (params.quality && !config.codexCli) formData.set("quality", params.quality);
-    if (config.responseFormatB64Json) formData.set("response_format", "b64_json");
+    if (config.responseFormatB64Json && !isGPTImageModel(config.model)) formData.set("response_format", "b64_json");
     if (config.streamImages) {
         formData.set("stream", "true");
         formData.set("partial_images", String(params.streamPartialImages));
     }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file) => formData.append("image", file));
+    const imageField = files.length > 1 ? "image[]" : "image";
+    files.forEach((file) => formData.append(imageField, file));
 
     const directProvider = !usesAccountProxy(config) ? directAIProviderForConfig(config) : null;
     if (directProvider) {
@@ -812,7 +829,7 @@ async function requestImageEditSingle(config: AiConfig, prompt: string, referenc
                 return { images, responseBody: summarizeGeneratedImages(images, "event-stream") };
             }
             const payload = (await response.json()) as ImageApiResponse;
-            return { images: parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
+            return { images: await parseImagePayload(payload, mime), responseBody: stringifyLogPayload(payload) };
         },
     );
 }
@@ -990,7 +1007,7 @@ export async function requestEdit(config: AiConfig & { seedIndex?: number; seedC
 
 export async function createCanvasImageTask(config: AiConfig & { seedIndex?: number; seedCount?: number }, prompt: string, references: ReferenceImage[], options: CanvasImageTaskOptions = {}): Promise<CanvasImageTask> {
     if (!usesAccountProxy(config)) {
-        const images = await requestImages({ ...config, count: "1" }, prompt, references);
+        const images = await requestImages(config, prompt, references);
         const [image] = images;
         if (!image) throw new Error("接口没有返回图片");
         return {
@@ -1003,11 +1020,11 @@ export async function createCanvasImageTask(config: AiConfig & { seedIndex?: num
             status: "completed",
             progress: 100,
             image_url: image.dataUrl,
-            ...(isKIESeedreamLayerDecompositionModel(config.model) ? { image_urls: images.map((item) => item.dataUrl) } : {}),
+            ...(images.length > 1 ? { image_urls: images.map((item) => item.dataUrl) } : {}),
         };
     }
-    const params = createImageRequestParams({ ...config, count: "1" });
-    const request = await createCanvasImageTaskRequest({ ...config, count: "1" }, prompt, references, params, options);
+    const params = createImageRequestParams(config);
+    const request = await createCanvasImageTaskRequest(config, prompt, references, params, options);
     const response = await fetch("/api/v1/canvas/image-tasks", request);
     if (!response.ok) {
         const error = await fetchErrorDetail(response, "图片任务创建失败");
@@ -1118,14 +1135,16 @@ async function createCanvasImageTaskRequest(config: AiConfig & { seedIndex?: num
         formData.set("prompt", withPromptGuard(config, withSystemPrompt(config, prompt)));
         if (params.n > 1) formData.set("n", String(params.n));
         if (params.quality && !config.codexCli) formData.set("quality", params.quality);
-        if (config.responseFormatB64Json) formData.set("response_format", "b64_json");
+        if (config.responseFormatB64Json && !isGPTImageModel(config.model)) formData.set("response_format", "b64_json");
         if (config.streamImages) {
             formData.set("stream", "true");
             formData.set("partial_images", String(params.streamPartialImages));
         }
         if (params.size) formData.set("size", params.size);
+        if (params.background) formData.set("background", params.background);
         const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-        files.forEach((file) => formData.append("image", file));
+        const imageField = files.length > 1 ? "image[]" : "image";
+        files.forEach((file) => formData.append(imageField, file));
         return { method: "POST", headers: tokenHeaders, body: formData };
     }
     if (isAgnesImageModel(config.model)) {
@@ -1249,7 +1268,7 @@ async function requestGeminiImageSingle(config: AiConfig, prompt: string, refere
 async function createGeminiImageBody(config: AiConfig, prompt: string, references: ReferenceImage[], params: ImageRequestParams) {
     const image = geminiImageSettings(config.model, config.quality, config.size, params.size);
     const parts: Array<Record<string, unknown>> = [{ text: withPromptGuard(config, prompt) }];
-    const dataUrls = await Promise.all(references.map(imageToDataUrl));
+    const dataUrls = await Promise.all(references.map((image) => imageToDataUrl(image)));
     parts.push(...dataUrls.map(dataUrlToGeminiInlineData));
     const systemPrompt = (config.systemPrompts.image || config.systemPrompt).trim();
     return {
@@ -1495,7 +1514,7 @@ async function requestAgnesImageEdit(config: AiConfig & { seedIndex?: number; se
                 return { images, responseBody: summarizeGeneratedImages(images, "event-stream") };
             }
             const payload = (await response.json()) as ImageApiResponse;
-            const images = parseImagePayload(payload, mime);
+            const images = await parseImagePayload(payload, mime);
             return { images, responseBody: stringifyLogPayload(payload) };
         },
     );
