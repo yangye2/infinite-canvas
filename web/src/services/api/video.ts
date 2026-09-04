@@ -8,8 +8,8 @@ import { boolConfig, isSeedanceVideoConfig, normalizeSeedanceRatio } from "@/lib
 import { isKIEGrokVideoModel, isKIEKlingV3Config, kieKlingOmniVariant } from "@/components/video-settings-panel";
 import { isAgnesVideoV25Model, isCogVideoX3Model, modelKey, normalizeCogVideoX3Duration, supportsVideoAudioGeneration } from "@/lib/video-model-capabilities";
 import { AGNES_VIDEO_V25_FLASH, isAgnesVideoV25FlashModel } from "@/lib/model-param-capabilities";
-import { resolveMediaUrl, uploadMediaFile } from "@/services/file-storage";
-import { imageToDataUrl, resolveImageUrl } from "@/services/image-storage";
+import { getMediaBlob, resolveMediaUrl, uploadMediaBlobToServer, uploadMediaFile } from "@/services/file-storage";
+import { getImageBlob, imageToDataUrl, resolveImageUrl } from "@/services/image-storage";
 import { buildApiUrl, channelIdForActiveModel, channelProtocolForConfig, directAIProviderForConfig, localChannelForActiveModel, type AiConfig, type VideoElementReference } from "@/stores/use-config-store";
 import { useUserStore } from "@/stores/use-user-store";
 import type { ReferenceImage } from "@/types/image";
@@ -607,8 +607,36 @@ async function agnesVideoV25ReferenceUrl(reference: ReferenceImage | ReferenceVi
         ? await resolveImageUrl(reference.storageKey, reference.url || "")
         : await resolveMediaUrl(reference.storageKey, reference.url);
     const url = publicHttpUrl(reference.url) || ("dataUrl" in reference ? publicHttpUrl(reference.dataUrl) : "") || publicHttpUrl(resolvedUrl);
-    if (!url) throw new VideoRequestError("Agnes Video 2.5 的参考素材必须具有公网访问地址");
-    return url;
+    if (url) return url;
+    // 本地素材：上传到服务端对象存储换取公网访问地址（Agnes 接口无法读取 base64、blob 或内网地址）
+    const blob = await agnesReferenceBlob(reference, resolvedUrl);
+    if (blob) {
+        const uploaded = await uploadMediaBlobToServer(blob, agnesReferenceFilename(reference, blob)).catch(() => null);
+        const uploadedUrl = publicHttpUrl(uploaded?.url);
+        if (uploadedUrl) return uploadedUrl;
+    }
+    throw new VideoRequestError("Agnes Video 2.5 的参考素材必须具有公网访问地址：请先在配置中启用对象存储（S3/R2 或 WebDAV），或改用远程 URL 素材");
+}
+
+async function agnesReferenceBlob(reference: ReferenceImage | ReferenceVideo | ReferenceAudio, resolvedUrl: string) {
+    if (reference.storageKey && !reference.storageKey.startsWith("server:")) {
+        const blob = "dataUrl" in reference ? await getImageBlob(reference.storageKey) : await getMediaBlob(reference.storageKey);
+        if (blob) return blob;
+    }
+    const directSource = "dataUrl" in reference && reference.dataUrl?.startsWith("data:") ? reference.dataUrl : resolvedUrl && !resolvedUrl.startsWith("blob:") ? resolvedUrl : "";
+    if (!directSource) return null;
+    try {
+        const response = await fetch(directSource);
+        return response.ok ? await response.blob() : null;
+    } catch {
+        return null;
+    }
+}
+
+function agnesReferenceFilename(reference: ReferenceImage | ReferenceVideo | ReferenceAudio, blob: Blob) {
+    const ext = blob.type ? (blob.type.split("/")[1]?.split(";")[0] || "bin").replace("jpeg", "jpg") : "bin";
+    const base = (reference.name || "reference").replace(/\.[^.]+$/, "").replace(/[\\/:*?"<>|\s]+/g, "-").slice(0, 40) || "reference";
+    return `${base}.${ext}`;
 }
 
 function publicHttpUrl(value?: string) {

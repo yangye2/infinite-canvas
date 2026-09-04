@@ -56,7 +56,8 @@ export async function uploadRemoteMediaToServer(url: string, filename: string): 
     return uploadMediaBlobToServer(blob, filename);
 }
 
-async function uploadMediaBlobToServer(blob: Blob, filename: string): Promise<UploadedFile> {
+/** 上传媒体到服务端对象存储，返回带公网地址的结果（供需要公网可访问 URL 的场景使用） */
+export async function uploadMediaBlobToServer(blob: Blob, filename: string): Promise<UploadedFile> {
     const config = await loadStorageConfig().catch(() => null);
     const userProvider = config?.allowUserProvider ? loadUserStorageProvider() : null;
     if (!config || (!canUseGlobalStorage(config) && !userProvider)) throw new Error("服务端对象存储未启用");
